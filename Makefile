@@ -1,9 +1,9 @@
-BIN ?= bin/sbx
+BIN ?= bin/ksbx
 
 .PHONY: build test check fmt lint vuln clean
 
 build:
-	go build -o $(BIN) ./cmd/sbx
+	go build -o $(BIN) ./cmd/ksbx
 
 test:
 	go test -race -count=1 ./...

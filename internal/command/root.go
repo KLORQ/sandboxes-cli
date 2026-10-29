@@ -42,7 +42,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 // Run executes the command tree and returns a process exit code.
 func (r *Runner) Run(ctx context.Context, args []string) int {
-	global := flag.NewFlagSet("sbx", flag.ContinueOnError)
+	global := flag.NewFlagSet("ksbx", flag.ContinueOnError)
 	global.SetOutput(r.Err)
 	socket := global.String("socket", r.Socket, "daemon unix socket")
 	if err := global.Parse(args); err != nil {
@@ -96,7 +96,7 @@ func (r *Runner) create(ctx context.Context, args []string) int {
 		return 2
 	}
 	if fs.NArg() != 1 {
-		_, _ = fmt.Fprintln(r.Err, "usage: sbx create [flags] <name>")
+		_, _ = fmt.Fprintln(r.Err, "usage: ksbx create [flags] <name>")
 		return 2
 	}
 	client, err := r.client()
@@ -151,7 +151,7 @@ func (r *Runner) list(ctx context.Context, args []string) int {
 
 func (r *Runner) get(ctx context.Context, args []string) int {
 	if len(args) != 1 {
-		_, _ = fmt.Fprintln(r.Err, "usage: sbx get <id>")
+		_, _ = fmt.Fprintln(r.Err, "usage: ksbx get <id>")
 		return 2
 	}
 	client, err := r.client()
@@ -185,7 +185,7 @@ func (r *Runner) remove(ctx context.Context, args []string) int {
 		return 2
 	}
 	if fs.NArg() != 1 {
-		_, _ = fmt.Fprintln(r.Err, "usage: sbx rm [--force] <id>")
+		_, _ = fmt.Fprintln(r.Err, "usage: ksbx rm [--force] <id>")
 		return 2
 	}
 	client, err := r.client()
@@ -205,7 +205,7 @@ func (r *Runner) remove(ctx context.Context, args []string) int {
 
 func (r *Runner) wait(ctx context.Context, args []string) int {
 	if len(args) != 1 {
-		_, _ = fmt.Fprintln(r.Err, "usage: sbx wait <operation-id>")
+		_, _ = fmt.Fprintln(r.Err, "usage: ksbx wait <operation-id>")
 		return 2
 	}
 	client, err := r.client()
@@ -231,7 +231,7 @@ func (r *Runner) lifecycle(ctx context.Context, name string, args []string) int 
 		return 2
 	}
 	if fs.NArg() != 1 {
-		_, _ = fmt.Fprintf(r.Err, "usage: sbx %s [flags] <id>\n", name)
+		_, _ = fmt.Fprintf(r.Err, "usage: ksbx %s [flags] <id>\n", name)
 		return 2
 	}
 	client, err := r.client()
@@ -279,7 +279,7 @@ func (r *Runner) printSandbox(sb *sdk.Sandbox) {
 }
 
 func (r *Runner) usage() {
-	_, _ = fmt.Fprintln(r.Out, "usage: sbx [--socket PATH] <command>")
+	_, _ = fmt.Fprintln(r.Out, "usage: ksbx [--socket PATH] <command>")
 	_, _ = fmt.Fprintln(r.Out, "commands: create, ls, get, start, stop, rm, wait, version, help")
 }
 
