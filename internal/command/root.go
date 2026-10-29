@@ -13,8 +13,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/KLORQ/sandboxes-cli/internal/version"
 	sdk "github.com/KLORQ/sandboxes-go-sdk"
+
+	"github.com/KLORQ/sandboxes-cli/internal/version"
 )
 
 // Runner executes commands against a local daemon.
@@ -139,7 +140,8 @@ func (r *Runner) list(ctx context.Context, args []string) int {
 	}
 	tw := tabwriter.NewWriter(r.Out, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "ID\tNAME\tSTATE\tIMAGE\tWORKSPACE")
-	for _, sb := range page.Items {
+	for i := range page.Items {
+		sb := &page.Items[i]
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", sb.ID, sb.Name, sb.State, sb.Image, sb.Workspace)
 	}
 	if err := tw.Flush(); err != nil {
