@@ -7,8 +7,17 @@ internals.
 
 ## Commands
 
-- `sandboxes version`
-- `sandboxes help`
+```sh
+sandboxes --socket "$HOME/.sandboxes/sandboxesd.sock" create dev
+sandboxes --socket "$HOME/.sandboxes/sandboxesd.sock" ls
+sandboxes --socket "$HOME/.sandboxes/sandboxesd.sock" get <id>
+sandboxes --socket "$HOME/.sandboxes/sandboxesd.sock" start <id>
+sandboxes --socket "$HOME/.sandboxes/sandboxesd.sock" stop <id>
+sandboxes --socket "$HOME/.sandboxes/sandboxesd.sock" rm [--force] <id>
+sandboxes --socket "$HOME/.sandboxes/sandboxesd.sock" wait <operation-id>
+```
+
+`SANDBOXES_SOCKET` can replace the `--socket` flag.
 
 ## Development
 
