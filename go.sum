@@ -1,7 +1,7 @@
 github.com/KLORQ/sandboxes-api v0.0.2 h1:+05Ty2MP0fjLUUO0sXS2WxAlSCvhkonO6obSPUeAjcE=
 github.com/KLORQ/sandboxes-api v0.0.2/go.mod h1:D4UcPhDDsc1XGskCIMaRrZWVblXF3mrgZC6uw4z2zC4=
-github.com/KLORQ/sandboxes-go-sdk v0.0.2 h1:ujZXIwBxVhhCazWu3pzR6cWR5/N5Ps/Fnp2Su0Mb28c=
-github.com/KLORQ/sandboxes-go-sdk v0.0.2/go.mod h1:P81Pu5c61k60w3+9GHDkmvDFotcchv27X1EJzEl61b0=
+github.com/KLORQ/sandboxes-go-sdk v0.0.3 h1:a6KPCGmYA9Q0l1aBng04/biV500ur4kM4se+2zWgvuo=
+github.com/KLORQ/sandboxes-go-sdk v0.0.3/go.mod h1:P81Pu5c61k60w3+9GHDkmvDFotcchv27X1EJzEl61b0=
 github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=
 github.com/golang/protobuf v1.5.4/go.mod h1:lnTiLA8Wa4RWRcIUkrtSVa5nRhsEGBg48fD6rSs7xps=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=

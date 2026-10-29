@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -84,6 +85,14 @@ func (fakeSandbox) Stop(context.Context, string, sdk.StopOptions) (*sdk.Operatio
 func (fakeSandbox) Delete(context.Context, string, sdk.DeleteOptions) (*sdk.Operation, error) {
 	return &sdk.Operation{ID: "op-4", Kind: "delete", State: "done"}, nil
 }
+func (fakeSandbox) Watch(context.Context, sdk.WatchOptions) (sdk.EventStream, error) {
+	return fakeEventStream{}, nil
+}
+
+type fakeEventStream struct{}
+
+func (fakeEventStream) Recv() (*sdk.Event, error) { return nil, io.EOF }
+func (fakeEventStream) Close() error              { return nil }
 
 type fakeOperations struct{}
 

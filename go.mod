@@ -2,7 +2,7 @@ module github.com/KLORQ/sandboxes-cli
 
 go 1.27
 
-require github.com/KLORQ/sandboxes-go-sdk v0.0.2
+require github.com/KLORQ/sandboxes-go-sdk v0.0.3
 
 require (
 	github.com/KLORQ/sandboxes-api v0.0.2 // indirect
