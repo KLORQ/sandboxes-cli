@@ -8,16 +8,16 @@ internals.
 ## Commands
 
 ```sh
-sandboxes --socket "$HOME/.sandboxes/sandboxesd.sock" create dev
-sandboxes --socket "$HOME/.sandboxes/sandboxesd.sock" ls
-sandboxes --socket "$HOME/.sandboxes/sandboxesd.sock" get <id>
-sandboxes --socket "$HOME/.sandboxes/sandboxesd.sock" start <id>
-sandboxes --socket "$HOME/.sandboxes/sandboxesd.sock" stop <id>
-sandboxes --socket "$HOME/.sandboxes/sandboxesd.sock" rm [--force] <id>
-sandboxes --socket "$HOME/.sandboxes/sandboxesd.sock" wait <operation-id>
+sbx --socket "$HOME/.sandboxes/sandboxesd.sock" create dev
+sbx --socket "$HOME/.sandboxes/sandboxesd.sock" ls
+sbx --socket "$HOME/.sandboxes/sandboxesd.sock" get <id>
+sbx --socket "$HOME/.sandboxes/sandboxesd.sock" start <id>
+sbx --socket "$HOME/.sandboxes/sandboxesd.sock" stop <id>
+sbx --socket "$HOME/.sandboxes/sandboxesd.sock" rm [--force] <id>
+sbx --socket "$HOME/.sandboxes/sandboxesd.sock" wait <operation-id>
 ```
 
-`SANDBOXES_SOCKET` can replace the `--socket` flag.
+`SANDBOXES_SOCKET` can replace the `--socket` flag. The installed binary is `sbx`; `sandboxes` is only the repository name.
 
 ## Development
 
