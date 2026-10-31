@@ -8,6 +8,10 @@ import (
 const completionCommands = "run create exec cp ls get ports policy start stop rm prune diagnose wait login logout secret version help"
 
 func (r *Runner) completion(args []string) int {
+	if len(args) == 1 && (args[0] == helpCommand || args[0] == helpShort || args[0] == helpFlag) {
+		_, _ = fmt.Fprint(r.Out, "usage: ksbx completion bash|zsh|fish|powershell\n")
+		return 0
+	}
 	if len(args) != 1 {
 		_, _ = fmt.Fprintln(r.Err, "usage: ksbx completion bash|zsh|fish|powershell")
 		return 2
