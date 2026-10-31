@@ -26,6 +26,35 @@ const (
 	answerYes      = "yes"
 )
 
+const createUsage = `usage: ksbx create [AGENT] [PATH...] [--name NAME] [flags]
+
+Create a sandbox for an agent. The default image is daemon-configured; only the
+shell agent is implemented. Omit PATH for no workspace mount.
+
+Flags:
+  --name NAME                 sandbox name
+  --workspace PATH[:ro]       additional workspace (repeatable)
+  --publish HOST:GUEST[/tcp]  publish a TCP/UDP guest port (repeatable)
+  --allow-network CIDR[:PORT] allow egress (repeatable)
+  --deny-network CIDR[:PORT]  deny egress (repeatable)
+  --image REF                 image override
+  --cpus N                    CPU count for a new sandbox
+  --memory SIZE               memory limit (binary units)
+  --idempotency-key KEY       idempotency key
+`
+
+const removeUsage = `usage: ksbx rm [-f|--force] [--format table|json|yaml] SANDBOX... | --all
+
+Remove one or more sandboxes. --force skips confirmation and allows removal of
+a running sandbox. --all removes every sandbox.
+`
+
+const pruneUsage = `usage: ksbx prune [--dry-run] [-f|--force] [--filter until=TIMESTAMP] [--format table|json|yaml]
+
+Remove stopped sandboxes. --dry-run lists candidates without removing them;
+--force skips confirmation.
+`
+
 // Runner executes commands against a local daemon.
 type Runner struct {
 	Out       io.Writer
@@ -54,10 +83,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 // Run executes the command tree and returns a process exit code.
 func (r *Runner) Run(ctx context.Context, args []string) int {
 	global := flag.NewFlagSet("ksbx", flag.ContinueOnError)
-	global.SetOutput(r.Err)
+	global.SetOutput(io.Discard)
 	socket := global.String("socket", r.Socket, "daemon unix socket")
 	if err := global.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
+			r.usage()
 			return 0
 		}
 		return 2
@@ -523,6 +553,7 @@ type createOptions struct {
 func (r *Runner) create(ctx context.Context, args []string) int {
 	opts, help, err := parseCreateOptions(args)
 	if help {
+		_, _ = fmt.Fprint(r.Out, createUsage)
 		return 0
 	}
 	if err != nil {
@@ -695,6 +726,7 @@ type removeOptions struct {
 func (r *Runner) remove(ctx context.Context, args []string) int {
 	opts, help, err := parseRemoveOptions(args)
 	if help {
+		_, _ = fmt.Fprint(r.Out, removeUsage)
 		return 0
 	}
 	if err != nil {
@@ -937,6 +969,8 @@ func (r *Runner) printSandbox(sb *sdk.Sandbox) {
 func (r *Runner) usage() {
 	_, _ = fmt.Fprintln(r.Out, "usage: ksbx [--socket PATH] <command>")
 	_, _ = fmt.Fprintln(r.Out, "commands: run, create, exec, cp, ls, get, ports, policy, start, stop, rm, prune, diagnose, wait, login, logout, secret, completion, version, help")
+	_, _ = fmt.Fprintln(r.Out, "global flags: --socket PATH  daemon unix socket")
+	_, _ = fmt.Fprintln(r.Out, `Use "ksbx <command> --help" for command details.`)
 }
 
 func (r *Runner) error(err error) {
