@@ -37,6 +37,8 @@ Flags:
                     allow egress CIDR rule (repeatable; optional udp: prefix)
       --deny-network CIDR[:PORT]
                     deny egress CIDR rule (repeatable; optional udp: prefix)
+      --policy-profile deny-all|balanced|sbx-compat
+                    opt-in egress profile (default deny-all)
       --cpus N      CPUs for a new sandbox (0 selects the daemon default)
   -m, --memory SIZE memory limit for a new sandbox such as 512m or 2g
   -e, --env KEY=VALUE
@@ -47,25 +49,26 @@ Flags:
   -h, --help        help for run
 `
 
-	shellAgent  = "shell"
-	shellPath   = "/bin/sh"
-	helpCommand = "help"
-	helpFlag    = "--help"
-	helpShort   = "-h"
-	detachFlag  = "--detach"
-	detachShort = "-d"
-	nameFlag    = "--name"
-	imageFlag   = "--image"
-	publishFlag = "--publish"
-	allowFlag   = "--allow-network"
-	denyFlag    = "--deny-network"
-	cpusFlag    = "--cpus"
-	memoryFlag  = "--memory"
-	memoryShort = "-m"
-	envFlag     = "--env"
-	envShort    = "-e"
-	envFileFlag = "--env-file"
-	removeFlag  = "--rm"
+	shellAgent        = "shell"
+	shellPath         = "/bin/sh"
+	helpCommand       = "help"
+	helpFlag          = "--help"
+	helpShort         = "-h"
+	detachFlag        = "--detach"
+	detachShort       = "-d"
+	nameFlag          = "--name"
+	imageFlag         = "--image"
+	publishFlag       = "--publish"
+	policyProfileFlag = "--policy-profile"
+	allowFlag         = "--allow-network"
+	denyFlag          = "--deny-network"
+	cpusFlag          = "--cpus"
+	memoryFlag        = "--memory"
+	memoryShort       = "-m"
+	envFlag           = "--env"
+	envShort          = "-e"
+	envFileFlag       = "--env-file"
+	removeFlag        = "--rm"
 )
 
 var errRunAgentRequired = errors.New("agent is required when --name is not set")
@@ -90,6 +93,7 @@ type runOptions struct {
 	publish  []string
 	allow    []string
 	deny     []string
+	profile  string
 	cpus     uint
 	memory   string
 	env      []string
@@ -210,6 +214,10 @@ func prepareRunResources(opts runOptions) (runResources, error) {
 	if err != nil {
 		return runResources{}, err
 	}
+	allow, err = mergeProfileRules(opts.profile, allow)
+	if err != nil {
+		return runResources{}, err
+	}
 	deny, err := resolveNetworkRules(opts.deny)
 	if err != nil {
 		return runResources{}, err
@@ -228,7 +236,7 @@ func (r *Runner) warnReusedResources(sandbox *sdk.Sandbox, opts runOptions, reso
 	if len(opts.publish) > 0 {
 		_, _ = fmt.Fprintf(r.Err, "warning: sandbox %s keeps its existing published ports; --publish applies only to new sandboxes\n", sandbox.Name)
 	}
-	if len(opts.allow) > 0 || len(opts.deny) > 0 {
+	if len(opts.allow) > 0 || len(opts.deny) > 0 || opts.profile != "" {
 		_, _ = fmt.Fprintf(r.Err, "warning: sandbox %s keeps its existing network policy; policy flags apply only to new sandboxes\n", sandbox.Name)
 	}
 }
@@ -295,6 +303,9 @@ func parseRunValueFlag(args []string, index int, arg string, opts *runOptions) (
 		return consumed, true, err
 	case allowFlag:
 		consumed, err := parseRunListValue(args, index, allowFlag, &opts.allow)
+		return consumed, true, err
+	case policyProfileFlag:
+		consumed, err := parseRunValue(args, index, policyProfileFlag, &opts.profile)
 		return consumed, true, err
 	case denyFlag:
 		consumed, err := parseRunListValue(args, index, denyFlag, &opts.deny)
