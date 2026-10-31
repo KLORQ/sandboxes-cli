@@ -1,38 +1,65 @@
 package command
 
-// agentSpec describes a built-in coding agent. Image is used only when the
-// caller did not pass an explicit --image.
-type agentSpec struct {
-	Name    string
-	Image   string
-	Command string
-}
+import (
+	"fmt"
+	"sync"
 
-const (
-	kimiAgent = "kimi"
-	kimiImage = "ghcr.io/klorq/sandbox-kimi:0.43.0"
+	"github.com/KLORQ/sandboxes-cli/internal/agent"
 )
 
-var agentSpecs = map[string]agentSpec{
-	shellAgent: {Name: shellAgent, Command: shellPath},
-	kimiAgent:  {Name: kimiAgent, Image: kimiImage, Command: "kimi"},
-}
+var loadAgentRegistry = sync.OnceValues(agent.Load)
 
-func agentSpecFor(name string) (agentSpec, bool) {
-	spec, ok := agentSpecs[name]
-	return spec, ok
+func agentRegistry() (*agent.Registry, error) {
+	return loadAgentRegistry()
 }
 
 func agentImage(name string) string {
-	if spec, ok := agentSpecFor(name); ok {
-		return spec.Image
+	registry, err := agentRegistry()
+	if err != nil {
+		return ""
 	}
-	return ""
+	spec, ok := registry.Lookup(name)
+	if !ok {
+		return ""
+	}
+	return spec.Image
 }
 
 func agentCommand(name string) string {
-	if spec, ok := agentSpecFor(name); ok && spec.Command != "" {
-		return spec.Command
+	registry, err := agentRegistry()
+	if err != nil {
+		return name
 	}
-	return name
+	spec, ok := registry.Lookup(name)
+	if !ok || len(spec.Command) == 0 {
+		return name
+	}
+	return spec.Command[0]
+}
+
+func agentCommandArgs(name string) []string {
+	registry, err := agentRegistry()
+	if err != nil {
+		return []string{name}
+	}
+	spec, ok := registry.Lookup(name)
+	if !ok || len(spec.Command) == 0 {
+		return []string{name}
+	}
+	return append([]string(nil), spec.Command...)
+}
+
+func validateAgent(name string) error {
+	registry, err := agentRegistry()
+	if err != nil {
+		return fmt.Errorf("load agent registry: %w", err)
+	}
+	spec, ok := registry.Lookup(name)
+	if !ok {
+		return fmt.Errorf("unknown agent %q; use one of: %v", name, registry.Names())
+	}
+	if !spec.Launchable() {
+		return fmt.Errorf("agent %q is not implemented yet; status %s", name, spec.Status)
+	}
+	return nil
 }

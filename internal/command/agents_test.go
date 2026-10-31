@@ -9,7 +9,7 @@ import (
 )
 
 func TestKimiAgentSpec(t *testing.T) {
-	if agentImage("kimi") != kimiImage || agentCommand("kimi") != "kimi" {
+	if agentImage("kimi") == "" || agentCommand("kimi") != "kimi" {
 		t.Fatalf("image=%q command=%q", agentImage("kimi"), agentCommand("kimi"))
 	}
 	if err := validateRunAgent("kimi"); err != nil {
@@ -28,7 +28,7 @@ func TestCreateKimiUsesDefaultImage(t *testing.T) {
 	if code := runner.Run(context.Background(), []string{"create", "--name", "kimi", "kimi", workspace}); code != 0 {
 		t.Fatalf("exit=%d output=%q", code, out.String())
 	}
-	if sandbox.request.Agent != "kimi" || sandbox.request.Image != kimiImage {
+	if sandbox.request.Agent != "kimi" || sandbox.request.Image != agentImage("kimi") {
 		t.Fatalf("request=%+v", sandbox.request)
 	}
 }
@@ -41,10 +41,28 @@ func TestRunKimiUsesAgentCommand(t *testing.T) {
 	if code := runner.Run(context.Background(), []string{"run", "--name", "kimi", "kimi", workspace}); code != 0 {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", code, out.String(), stderr.String())
 	}
-	if sandboxes.created.Agent != "kimi" || sandboxes.created.Image != kimiImage {
+	if sandboxes.created.Agent != "kimi" || sandboxes.created.Image != agentImage("kimi") {
 		t.Fatalf("created=%+v", sandboxes.created)
 	}
 	if len(sessions.req.Argv) == 0 || sessions.req.Argv[0] != "kimi" {
 		t.Fatalf("argv=%v", sessions.req.Argv)
+	}
+}
+
+func TestAgentRegistryPreviewAndUnsupported(t *testing.T) {
+	if agentImage("codex") != "docker/sandbox-templates:codex-docker" || agentCommand("codex") != "codex" {
+		t.Fatalf("codex image=%q command=%q", agentImage("codex"), agentCommand("codex"))
+	}
+	if err := validateRunAgent("codex"); err != nil {
+		t.Fatalf("preview codex rejected: %v", err)
+	}
+	if err := validateRunAgent("claude"); err == nil {
+		t.Fatal("unsupported claude accepted")
+	}
+	if err := validateRunAgent("missing"); err == nil {
+		t.Fatal("unknown agent accepted")
+	}
+	if !isAgentName("kimi") || !isAgentName("claude") || isAgentName("missing") {
+		t.Fatal("isAgentName registry mismatch")
 	}
 }
