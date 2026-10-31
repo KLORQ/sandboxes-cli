@@ -172,15 +172,9 @@ func (r *Runner) policyCheck(ctx context.Context, args []string) int {
 }
 
 func parsePolicyDestination(value string) (net.IP, error) {
-	if ip := net.ParseIP(value); ip != nil {
-		if ip.To4() == nil {
-			return nil, errors.New("destination must be IPv4")
-		}
-		return ip.To4(), nil
-	}
-	ip, _, err := net.ParseCIDR(value)
-	if err != nil || ip.To4() == nil {
-		return nil, errors.New("destination must be an IPv4 address or CIDR")
+	ip := net.ParseIP(value)
+	if ip == nil || ip.To4() == nil {
+		return nil, errors.New("destination must be a single IPv4 address")
 	}
 	return ip.To4(), nil
 }
@@ -232,7 +226,11 @@ func evaluatePolicy(allow, deny []sdk.NetworkRule, protocol string, ip net.IP, p
 	matches := func(rules []sdk.NetworkRule) string {
 		for i := range rules {
 			rule := rules[i]
-			if rule.Protocol != "" && rule.Protocol != protocol {
+			ruleProtocol := rule.Protocol
+			if ruleProtocol == "" {
+				ruleProtocol = tcpProtocol
+			}
+			if ruleProtocol != protocol {
 				continue
 			}
 			if rule.Port != 0 && rule.Port != port {
@@ -263,7 +261,7 @@ Commands:
   allow SANDBOX CIDR[:PORT]               add an allow rule (live for running sandboxes)
   deny SANDBOX CIDR[:PORT]                add a deny rule (live for running sandboxes)
   rm SANDBOX CIDR[:PORT]                  remove an allow or deny rule
-  check SANDBOX IP|CIDR PORT [PROTOCOL]   evaluate a request against stored rules
+  check SANDBOX IP PORT [PROTOCOL]         evaluate a request against stored rules
 
 reset/init/refresh/log/approvals/profiles are not implemented. Default is deny.
 `

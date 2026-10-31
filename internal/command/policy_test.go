@@ -33,6 +33,22 @@ func TestEvaluatePolicy(t *testing.T) {
 	if allowed, reason := evaluatePolicy(nil, nil, "tcp", ip, 443); allowed || reason != "default deny" {
 		t.Fatalf("default=%v %s", allowed, reason)
 	}
+	emptyProtocol := []sdk.NetworkRule{{CIDR: "10.0.0.0/8", Port: 443}}
+	if allowed, _ := evaluatePolicy(emptyProtocol, nil, "tcp", ip, 443); !allowed {
+		t.Fatal("empty protocol must default to tcp")
+	}
+	if allowed, _ := evaluatePolicy(emptyProtocol, nil, "udp", ip, 443); allowed {
+		t.Fatal("empty protocol incorrectly matched udp")
+	}
+}
+
+func TestParsePolicyDestinationRejectsCIDR(t *testing.T) {
+	if _, err := parsePolicyDestination("10.0.0.0/8"); err == nil {
+		t.Fatal("CIDR destination accepted")
+	}
+	if _, err := parsePolicyDestination("2001:db8::1"); err == nil {
+		t.Fatal("IPv6 destination accepted")
+	}
 }
 
 func TestPolicyListAndCheck(t *testing.T) {

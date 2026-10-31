@@ -60,8 +60,8 @@ repeated when creating; `ksbx ports SANDBOX` lists the stored bindings;
 prefix) add create-time IPv4 egress rules; the default remains deny. `ksbx
 policy ls SANDBOX` lists stored rules, `policy allow|deny SANDBOX CIDR[:PORT]`
 adds a rule and `policy rm SANDBOX CIDR[:PORT]` removes one; running sandboxes
-are updated live through the gateway reload ACK. `policy check SANDBOX IP|CIDR
-PORT [PROTOCOL]` evaluates stored rules (exit 0 allow, 1 deny). Domains,
+are updated live through the gateway reload ACK. `policy check SANDBOX IP PORT
+[PROTOCOL]` evaluates stored rules (exit 0 allow, 1 deny). Domains,
 wildcards, reset/init/refresh, approvals and policy logs are not implemented. TCP and UDP
 are supported with explicit or ephemeral host ports; an occupied host port is
 rejected at create and dynamic updates reconcile gvproxy's forwarders without
