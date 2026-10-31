@@ -1,13 +1,14 @@
 BIN ?= bin/ksbx
+COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null)
 
 .PHONY: build dev-bundle test check fmt lint vuln clean
 
 build:
-	go build -o $(BIN) ./cmd/ksbx
+	go build -ldflags "-X github.com/KLORQ/sandboxes-cli/internal/version.Commit=$(COMMIT)" -o $(BIN) ./cmd/ksbx
 
 # Local workspace bundle; releases must use tagged module dependencies.
 dev-bundle:
-	go build -o dist/ksbx ./cmd/ksbx
+	go build -ldflags "-X github.com/KLORQ/sandboxes-cli/internal/version.Commit=$(COMMIT)" -o dist/ksbx ./cmd/ksbx
 	cd ../sandboxes-daemon && go build -o ../sandboxes-cli/dist/sandboxesd ./cmd/sandboxesd
 
 test:

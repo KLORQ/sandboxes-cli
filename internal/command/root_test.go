@@ -38,7 +38,7 @@ func TestCreateUsesSDK(t *testing.T) {
 	if code := runner.Run(context.Background(), []string{"create", "dev"}); code != 0 {
 		t.Fatalf("exit code %d, output %s", code, out.String())
 	}
-	if !strings.Contains(out.String(), "op-1") {
+	if !strings.Contains(out.String(), "SANDBOX") || !strings.Contains(out.String(), "Created sandbox dev") {
 		t.Fatalf("unexpected output: %s", out.String())
 	}
 }

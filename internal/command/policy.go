@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -33,8 +34,14 @@ func (r *Runner) policy(ctx context.Context, args []string) int {
 	case "ls", "inspect":
 		return r.policyList(ctx, args[1:])
 	case "check":
+		if len(args) > 1 && args[1] == networkKeyword {
+			return r.policyCheckNetwork(ctx, args[2:])
+		}
 		return r.policyCheck(ctx, args[1:])
 	case "allow", "deny", "rm":
+		if len(args) > 1 && args[1] == networkKeyword {
+			return r.policyMutateNetwork(ctx, args[0], args[2:])
+		}
 		return r.policyMutate(ctx, args[0], args[1:])
 	case "reset", "init", "refresh", "log", "approval", "profile":
 		_, _ = fmt.Fprintf(r.Err, "ksbx policy %s: this policy operation is not implemented\n", args[0])
@@ -49,6 +56,160 @@ func (r *Runner) policy(ctx context.Context, args []string) int {
 	}
 }
 
+// policyNetworkScope parses the shared `policy <verb> network [--sandbox NAME]`
+// grammar used by the Docker sbx baseline. An empty sandbox name means the
+// global scope, which the local runtime does not implement.
+func (r *Runner) policyNetworkScope(cmdPath string, args []string) (sandboxName string, rest []string, code int) {
+	fs := flag.NewFlagSet(cmdPath, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.StringVar(&sandboxName, "sandbox", "", "scope the rule to one sandbox (global scope is not implemented locally)")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return "", nil, 0
+		}
+		return "", nil, r.flagParseFailure(cmdPath, err)
+	}
+	return sandboxName, fs.Args(), -1
+}
+
+func (r *Runner) policyMutateNetwork(ctx context.Context, action string, args []string) int {
+	sandboxName, rest, code := r.policyNetworkScope("policy "+action+" network", args)
+	if code >= 0 {
+		return code
+	}
+	if sandboxName == "" {
+		_, _ = fmt.Fprintln(r.Err, "error: global policy rules are not implemented by the local runtime; use --sandbox NAME")
+		return 1
+	}
+	if len(rest) != 1 {
+		_, _ = fmt.Fprintf(r.Err, "usage: ksbx policy %s network --sandbox NAME CIDR[:PORT]\n", action)
+		return 2
+	}
+	return r.policyMutate(ctx, action, []string{sandboxName, rest[0]})
+}
+
+func (r *Runner) policyCheckNetwork(ctx context.Context, args []string) int {
+	sandboxName, rest, code := r.policyNetworkScope("policy check network", args)
+	if code >= 0 {
+		return code
+	}
+	if len(rest) != 1 {
+		_, _ = fmt.Fprintln(r.Err, "usage: ksbx policy check network [--sandbox NAME] TARGET (IPv4[:PORT], IPv6[:PORT], or http(s)://URL)")
+		return 2
+	}
+	host, port, err := parsePolicyTarget(rest[0])
+	if err != nil {
+		r.error(err)
+		return 2
+	}
+	if host == nil {
+		r.error(fmt.Errorf("unsupported policy target %q: domain and wildcard rules are not implemented by the local runtime policy model", rest[0]))
+		return 2
+	}
+	client, err := r.client()
+	if err != nil {
+		r.error(err)
+		return 1
+	}
+	defer func() { _ = client.Close() }()
+	var allow, deny []sdk.NetworkRule
+	if sandboxName != "" {
+		id, err := findExecSandbox(ctx, client, sandboxName)
+		if err != nil {
+			r.error(err)
+			return 1
+		}
+		sb, err := client.Sandboxes().Get(ctx, id)
+		if err != nil {
+			r.error(err)
+			return 1
+		}
+		allow, deny = sb.Allow, sb.Deny
+	}
+	if host.To4() == nil {
+		r.error(errors.New("IPv6 policy targets are not implemented by the local runtime policy model"))
+		return 2
+	}
+	allowed, reason := evaluatePolicyTarget(allow, deny, tcpProtocol, host, port)
+	if allowed {
+		_, _ = fmt.Fprintf(r.Out, "allowed: %s\n", reason)
+		return 0
+	}
+	_, _ = fmt.Fprintf(r.Out, "denied: %s\n", reason)
+	return 1
+}
+
+// parsePolicyTarget extracts a host and optional port from an IPv4/IPv6
+// literal or an http(s) URL. A zero port means "any port".
+func parsePolicyTarget(target string) (net.IP, uint16, error) {
+	if strings.Contains(target, "://") {
+		return parseURLPolicyTarget(target)
+	}
+	if host, portText, err := net.SplitHostPort(target); err == nil {
+		port, err := strconv.ParseUint(portText, 10, 16)
+		if err != nil || port == 0 {
+			return nil, 0, errors.New("port must be 1..65535")
+		}
+		return net.ParseIP(host), uint16(port), nil
+	}
+	if strings.Count(target, ":") >= 1 && net.ParseIP(target) == nil {
+		return nil, 0, fmt.Errorf("unsupported policy target %q; use IPv4[:PORT], IPv6[:PORT], or an http(s) URL", target)
+	}
+	return net.ParseIP(target), 0, nil
+}
+
+func parseURLPolicyTarget(target string) (net.IP, uint16, error) {
+	parsed, err := url.Parse(target)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return nil, 0, fmt.Errorf("unsupported policy target %q; use IPv4/IPv6 or an http(s) URL", target)
+	}
+	host := parsed.Hostname()
+	if parsed.Port() != "" {
+		port, err := strconv.ParseUint(parsed.Port(), 10, 16)
+		if err != nil || port == 0 {
+			return nil, 0, errors.New("URL port must be 1..65535")
+		}
+		return net.ParseIP(host), uint16(port), nil
+	}
+	if parsed.Scheme == "https" {
+		return net.ParseIP(host), 443, nil
+	}
+	return net.ParseIP(host), 80, nil
+}
+
+// evaluatePolicyTarget evaluates rules for a host; a zero port matches rules
+// for any port (deny still wins over a narrower allow).
+func evaluatePolicyTarget(allow, deny []sdk.NetworkRule, protocol string, ip net.IP, port uint16) (bool, string) {
+	if port != 0 {
+		return evaluatePolicy(allow, deny, protocol, ip, port)
+	}
+	matches := func(rules []sdk.NetworkRule) string {
+		for i := range rules {
+			rule := rules[i]
+			ruleProtocol := rule.Protocol
+			if ruleProtocol == "" {
+				ruleProtocol = tcpProtocol
+			}
+			if ruleProtocol != protocol {
+				continue
+			}
+			_, network, err := net.ParseCIDR(rule.CIDR)
+			if err != nil || !network.Contains(ip) {
+				continue
+			}
+			return rule.CIDR
+		}
+		return ""
+	}
+	if cidr := matches(deny); cidr != "" {
+		return false, "deny rule " + cidr
+	}
+	if cidr := matches(allow); cidr != "" {
+		return true, "allow rule " + cidr
+	}
+	return false, "default deny"
+}
+
 func (r *Runner) policyList(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("policy ls", flag.ContinueOnError)
 	fs.SetOutput(r.Err)
@@ -58,7 +219,7 @@ func (r *Runner) policyList(ctx context.Context, args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		return 2
+		return r.flagParseFailure("policy ls", err)
 	}
 	if fs.NArg() != 1 {
 		_, _ = fmt.Fprintln(r.Err, "usage: ksbx policy ls [--format table|json|yaml] SANDBOX")
@@ -202,6 +363,7 @@ func renderPolicyRules(out io.Writer, format string, rules []policyRuleOutput) e
 			_, err := fmt.Fprintln(out, "No policy rules (default deny)")
 			return err
 		}
+		_, _ = fmt.Fprintln(out, "NETWORK")
 		tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 		_, _ = fmt.Fprintln(tw, "ACTION\tPROTOCOL\tCIDR\tPORT")
 		for _, rule := range rules {
@@ -256,12 +418,15 @@ func evaluatePolicy(allow, deny []sdk.NetworkRule, protocol string, ip net.IP, p
 const policyUsage = `Usage: ksbx policy COMMAND
 
 Commands:
-  ls SANDBOX [--format table|json|yaml]   list stored allow/deny rules
-  inspect SANDBOX                         alias for ls
-  allow SANDBOX CIDR[:PORT]               add an allow rule (live for running sandboxes)
-  deny SANDBOX CIDR[:PORT]                add a deny rule (live for running sandboxes)
-  rm SANDBOX CIDR[:PORT]                  remove an allow or deny rule
-  check SANDBOX IP PORT [PROTOCOL]         evaluate a request against stored rules
+  ls SANDBOX [--format table|json|yaml]       list stored allow/deny rules
+  inspect SANDBOX                             alias for ls
+  allow|deny|rm SANDBOX CIDR[:PORT]           change per-sandbox rules
+  allow|deny|rm network --sandbox NAME CIDR[:PORT]
+                                              Docker sbx grammar for per-sandbox rules
+  check SANDBOX IP PORT [PROTOCOL]            evaluate a request against stored rules
+  check network [--sandbox NAME] TARGET       Docker sbx grammar; TARGET is
+                                              IPv4[:PORT], IPv6[:PORT], or http(s)://URL
 
-reset/init/refresh/log/approvals/profiles are not implemented. Default is deny.
+Global (sandbox-less) rules, domain/wildcard rules, and filesystem policy are
+not implemented by the local runtime; the default is deny.
 `

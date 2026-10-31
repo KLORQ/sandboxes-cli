@@ -59,6 +59,9 @@ func (r *Runner) list(ctx context.Context, args []string) int {
 		_, _ = fmt.Fprint(r.Out, listUsage)
 		return 0
 	}
+	if parseErr, ok := asFlagParseError(err); ok {
+		return r.flagParseFailure("ls", parseErr.err)
+	}
 	if err != nil {
 		_, _ = fmt.Fprintf(r.Err, "ksbx ls: %v\n", err)
 		return 2
@@ -99,7 +102,7 @@ func parseListOptions(args []string) (listOptions, bool, error) {
 		if errors.Is(err, flag.ErrHelp) {
 			return listOptions{}, true, nil
 		}
-		return listOptions{}, false, err
+		return listOptions{}, false, flagParseError{err: err}
 	}
 	if fs.NArg() != 0 {
 		return listOptions{}, false, errors.New("usage: ksbx ls [--format table|json|yaml] [--json] [-q] [--limit N]")

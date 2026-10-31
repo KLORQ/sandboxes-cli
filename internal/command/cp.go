@@ -47,7 +47,7 @@ func (r *Runner) cp(ctx context.Context, args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		return 2
+		return r.flagParseFailure("cp", err)
 	}
 	if fs.NArg() != 2 {
 		_, _ = fmt.Fprintln(r.Err, cpUsage)
@@ -74,21 +74,41 @@ func (r *Runner) cp(ctx context.Context, args []string) int {
 		r.error(err)
 		return 1
 	}
-	if srcGuest {
-		err = copyGuestToHost(ctx, client, id, src.path, fs.Arg(1), *follow)
-	} else {
+	var workspaces []sdk.Workspace
+	if !srcGuest {
 		sb, getErr := client.Sandboxes().Get(ctx, id)
 		if getErr != nil {
 			r.error(getErr)
 			return 1
 		}
-		err = copyHostToGuest(ctx, client, id, fs.Arg(0), dst.path, sb.Workspaces, *follow)
+		workspaces = sb.Workspaces
+	}
+	if srcGuest {
+		err = copyGuestToHost(ctx, client, id, src.path, fs.Arg(1), *follow)
+	} else {
+		err = copyHostToGuest(ctx, client, id, fs.Arg(0), dst.path, workspaces, *follow)
 	}
 	if err != nil {
-		r.error(err)
+		r.error(explainCopyError(err, workspaces))
 		return 1
 	}
 	return 0
+}
+
+// explainCopyError adds workspace context to raw os.Root escape failures so
+// refusals read like the Docker sbx baseline instead of syscall text.
+func explainCopyError(err error, workspaces []sdk.Workspace) error {
+	if !strings.Contains(err.Error(), "escapes from parent") {
+		return err
+	}
+	paths := make([]string, 0, len(workspaces))
+	for i := range workspaces {
+		paths = append(paths, workspaces[i].Path)
+	}
+	if len(paths) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w (sandbox workspaces: %s; copy sources and -L link targets must stay inside a mounted workspace)", err, strings.Join(paths, ", "))
 }
 
 func copyHostToGuest(ctx context.Context, client sdk.Client, sandboxID, hostSource, guestTarget string, workspaces []sdk.Workspace, followLink bool) error {

@@ -51,7 +51,7 @@ func (r *Runner) exec(ctx context.Context, args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		return 125
+		return r.flagParseFailure("exec", err)
 	}
 	if fs.NArg() < 2 {
 		_, _ = fmt.Fprintln(r.Err, "usage: ksbx exec [-i] [-t] [-w DIR] [-e KEY=VALUE] [--env-file FILE] [-u uid[:gid]] SANDBOX COMMAND [ARG...]")
@@ -111,7 +111,7 @@ func expandExecFlags(args []string) []string {
 
 func execFlagTakesValue(arg string) bool {
 	switch arg {
-	case "-w", "--workdir", "-workdir", "-e", "--env", "--env-file", "-u", "--user":
+	case "-w", workdirFlag, "-workdir", "-e", envFlag, "--env-file", "-u", userFlag:
 		return true
 	default:
 		return false
@@ -145,6 +145,10 @@ func findExecSandbox(ctx context.Context, client sdk.Client, name string) (strin
 }
 
 func (r *Runner) execSession(ctx context.Context, client sdk.Client, id string, argv []string, opts execOptions, interactive, tty bool) int {
+	return r.execSessionMode(ctx, client, id, argv, opts, interactive, tty, true)
+}
+
+func (r *Runner) execSessionMode(ctx context.Context, client sdk.Client, id string, argv []string, opts execOptions, interactive, tty, closeOnEOF bool) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	size, file, restore, err := prepareExecTerminal(r.In, interactive, tty)
@@ -165,7 +169,7 @@ func (r *Runner) execSession(ctx context.Context, client sdk.Client, id string, 
 		defer stop()
 	}
 	if interactive {
-		go forwardSessionInput(r.In, session, cancel)
+		go forwardSessionInput(r.In, session, cancel, closeOnEOF)
 	} else if !tty {
 		if err := session.CloseInput(); err != nil {
 			r.error(err)
@@ -206,7 +210,7 @@ func terminalSize(rows, cols int) (sdk.TerminalSize, error) {
 	return sdk.TerminalSize{Rows: uint32(rows), Cols: uint32(cols)}, nil
 }
 
-func forwardSessionInput(input io.Reader, session sdk.ExecSession, cancel context.CancelFunc) {
+func forwardSessionInput(input io.Reader, session sdk.ExecSession, cancel context.CancelFunc, closeOnEOF bool) {
 	buffer := make([]byte, 32*1024)
 	for {
 		n, err := input.Read(buffer)
@@ -221,7 +225,12 @@ func forwardSessionInput(input io.Reader, session sdk.ExecSession, cancel contex
 				cancel()
 				return
 			}
-			_ = session.CloseInput()
+			// Some non-terminal inputs (for example /dev/null) report EOF
+			// forever; closing the session input would kill an attached
+			// agent immediately, so callers decide whether EOF is final.
+			if closeOnEOF {
+				_ = session.CloseInput()
+			}
 			return
 		}
 		if n == 0 {
