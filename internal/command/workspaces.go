@@ -25,7 +25,12 @@ func parseWorkspaceSpec(value string) (sdk.Workspace, error) {
 		return sdk.Workspace{}, fmt.Errorf("workspace %s: %w", path, err)
 	}
 	if !info.IsDir() {
-		return sdk.Workspace{}, fmt.Errorf("workspace %s is not a directory", path)
+		if !info.Mode().IsRegular() {
+			return sdk.Workspace{}, fmt.Errorf("workspace %s is not a directory or regular file", path)
+		}
+		if !readOnly {
+			return sdk.Workspace{}, fmt.Errorf("workspace file %s must be read-only (:ro)", path)
+		}
 	}
 	return sdk.Workspace{Path: absolute, ReadOnly: readOnly}, nil
 }
