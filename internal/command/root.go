@@ -551,6 +551,7 @@ type createOptions struct {
 	cpus           uint32
 	memoryMiB      uint32
 	env            []string
+	profile        string
 }
 
 func (r *Runner) create(ctx context.Context, args []string) int {
@@ -643,6 +644,7 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	idempotency := fs.String("idempotency-key", "", "idempotency key")
 	cpus := fs.Uint("cpus", 0, "CPUs (0 selects the daemon default)")
 	memory := fs.String("memory", "", "memory limit such as 512m or 2g (empty selects the daemon default)")
+	profile := fs.String("policy-profile", "", "egress profile: deny-all, balanced or sbx-compat")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return createOptions{}, true, nil
@@ -672,18 +674,19 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	if err != nil {
 		return createOptions{}, false, err
 	}
-	workspace := ""
-	if len(workspaces) > 0 {
-		workspace = workspaces[0].Path
-	}
+	workspace := firstWorkspacePath(workspaces)
 	ports, allow, deny, err := resolveCreateNetwork(publishFlags, allowFlags, denyFlags)
+	if err != nil {
+		return createOptions{}, false, err
+	}
+	allow, err = mergeProfileRules(*profile, allow)
 	if err != nil {
 		return createOptions{}, false, err
 	}
 	return createOptions{
 		name: name, agent: agent, image: *image, workspace: workspace, idempotencyKey: *idempotency,
 		workspaces: workspaces, ports: ports, allow: allow, deny: deny,
-		cpus: cpuCount, memoryMiB: memoryMiB, env: env,
+		cpus: cpuCount, memoryMiB: memoryMiB, env: env, profile: *profile,
 	}, false, nil
 }
 
@@ -1047,4 +1050,11 @@ func resolveCreateNetwork(publish, allow, deny []string) ([]sdk.Port, []sdk.Netw
 		return nil, nil, nil, err
 	}
 	return ports, allowRules, denyRules, nil
+}
+
+func firstWorkspacePath(workspaces []sdk.Workspace) string {
+	if len(workspaces) == 0 {
+		return ""
+	}
+	return workspaces[0].Path
 }

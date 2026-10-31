@@ -59,7 +59,10 @@ repeated when creating; `ksbx ports SANDBOX` lists the stored bindings;
 `ports --publish HOST:GUEST` / `--unpublish [HOST:]GUEST` change them live;
 `--publish GUEST` allocates an ephemeral loopback host port.
 `--allow-network CIDR[:PORT]` and `--deny-network CIDR[:PORT]` (optional `udp:`
-prefix) add create-time IPv4 egress rules; the default remains deny. `ksbx
+prefix) add create-time IPv4 egress rules; the default remains deny.
+`--policy-profile deny-all|balanced|sbx-compat` selects an opt-in egress preset
+(balanced: 80/443 + DNS; sbx-compat: all IPv4 network); it never changes the
+default. `ksbx
 policy ls SANDBOX` lists stored rules, `policy allow|deny SANDBOX CIDR[:PORT]`
 adds a rule and `policy rm SANDBOX CIDR[:PORT]` removes one; running sandboxes
 are updated live through the gateway reload ACK. `policy check SANDBOX IP PORT

@@ -40,9 +40,9 @@ func parsePortSpec(value string, allocateHost bool) (sdk.Port, error) {
 		protocol = after
 	}
 	switch protocol {
-	case "tcp", "tcp4":
+	case tcpProtocol, "tcp4":
 		protocol = tcpProtocol
-	case "udp", "udp4":
+	case udpProtocol, "udp4":
 		protocol = udpProtocol
 	default:
 		return sdk.Port{}, errors.New("port protocol must be tcp, udp, tcp4 or udp4")
