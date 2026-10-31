@@ -1,9 +1,14 @@
 BIN ?= bin/ksbx
 
-.PHONY: build test check fmt lint vuln clean
+.PHONY: build dev-bundle test check fmt lint vuln clean
 
 build:
 	go build -o $(BIN) ./cmd/ksbx
+
+# Local workspace bundle; releases must use tagged module dependencies.
+dev-bundle:
+	go build -o dist/ksbx ./cmd/ksbx
+	cd ../sandboxes-daemon && go build -o ../sandboxes-cli/dist/sandboxesd ./cmd/sandboxesd
 
 test:
 	go test -race -count=1 ./...
