@@ -334,3 +334,16 @@ func TestRunCreatesMultipleWorkspaces(t *testing.T) {
 		t.Fatalf("agent/detached=%q/%t", sandboxes.created.Agent, sandboxes.created.Detached)
 	}
 }
+
+func TestRunBakesEnvOnCreate(t *testing.T) {
+	workspace := t.TempDir()
+	sandboxes := &runSandbox{}
+	sessions := &fakeSessions{}
+	runner, out, stderr := runTestRunner(t, runClient{sandboxes: sandboxes, sessions: sessions}, "")
+	if code := runner.Run(context.Background(), []string{"run", "--name", "env-run", "-e", "A=1", "shell", workspace}); code != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, out.String(), stderr.String())
+	}
+	if sandboxes.created.Env["A"] != "1" {
+		t.Fatalf("create env=%v", sandboxes.created.Env)
+	}
+}

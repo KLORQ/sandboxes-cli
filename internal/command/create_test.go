@@ -45,3 +45,16 @@ func TestCreateRejectsUnsupportedAgentBeforeConnecting(t *testing.T) {
 		t.Fatalf("exit=%d client-called=%t", code, called)
 	}
 }
+
+func TestCreateBakesEnv(t *testing.T) {
+	workspace := t.TempDir()
+	sandbox := &recordingCreateSandbox{}
+	var out bytes.Buffer
+	runner := &Runner{Out: &out, Err: &out, NewClient: func(string) (sdk.Client, error) { return fakeClient{sandbox: sandbox}, nil }}
+	if code := runner.Run(context.Background(), []string{"create", "--name", "env", "-e", "A=1", "--env", "B=2", "shell", workspace}); code != 0 {
+		t.Fatalf("exit=%d output=%q", code, out.String())
+	}
+	if len(sandbox.request.Env) != 2 || sandbox.request.Env["A"] != "1" || sandbox.request.Env["B"] != "2" {
+		t.Fatalf("env=%v", sandbox.request.Env)
+	}
+}

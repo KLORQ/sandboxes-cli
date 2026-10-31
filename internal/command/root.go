@@ -41,6 +41,8 @@ Flags:
   --cpus N                    CPU count for a new sandbox
   --memory SIZE               memory limit (binary units)
   --idempotency-key KEY       idempotency key
+  -e, --env KEY=VALUE         environment for every process (repeatable)
+  --env-file FILE             read environment overrides from a file (repeatable)
 `
 
 const removeUsage = `usage: ksbx rm [-f|--force] [--format table|json|yaml] SANDBOX... | --all
@@ -548,6 +550,7 @@ type createOptions struct {
 	deny           []sdk.NetworkRule
 	cpus           uint32
 	memoryMiB      uint32
+	env            []string
 }
 
 func (r *Runner) create(ctx context.Context, args []string) int {
@@ -586,6 +589,7 @@ func (r *Runner) create(ctx context.Context, args []string) int {
 		Agent:          opts.agent,
 		CPUs:           opts.cpus,
 		MemoryMiB:      opts.memoryMiB,
+		Env:            envMap(opts.env),
 	})
 	if err != nil {
 		r.error(err)
@@ -632,6 +636,10 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	var allowFlags, denyFlags stringListFlag
 	fs.Var(&allowFlags, "allow-network", "allow egress CIDR[:PORT] (repeatable; optional udp: prefix)")
 	fs.Var(&denyFlags, "deny-network", "deny egress CIDR[:PORT] (repeatable; optional udp: prefix)")
+	var envFlags, envFileFlags stringListFlag
+	fs.Var(&envFlags, "env", "environment KEY=VALUE for every process (repeatable)")
+	fs.Var(&envFlags, "e", "environment KEY=VALUE for every process (repeatable)")
+	fs.Var(&envFileFlags, "env-file", "read environment from a file (repeatable)")
 	idempotency := fs.String("idempotency-key", "", "idempotency key")
 	cpus := fs.Uint("cpus", 0, "CPUs (0 selects the daemon default)")
 	memory := fs.String("memory", "", "memory limit such as 512m or 2g (empty selects the daemon default)")
@@ -660,26 +668,22 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	if err != nil {
 		return createOptions{}, false, err
 	}
+	env, err := buildExecEnv(envFlags, envFileFlags)
+	if err != nil {
+		return createOptions{}, false, err
+	}
 	workspace := ""
 	if len(workspaces) > 0 {
 		workspace = workspaces[0].Path
 	}
-	ports, err := resolvePorts(publishFlags)
-	if err != nil {
-		return createOptions{}, false, err
-	}
-	allow, err := resolveNetworkRules(allowFlags)
-	if err != nil {
-		return createOptions{}, false, err
-	}
-	deny, err := resolveNetworkRules(denyFlags)
+	ports, allow, deny, err := resolveCreateNetwork(publishFlags, allowFlags, denyFlags)
 	if err != nil {
 		return createOptions{}, false, err
 	}
 	return createOptions{
 		name: name, agent: agent, image: *image, workspace: workspace, idempotencyKey: *idempotency,
 		workspaces: workspaces, ports: ports, allow: allow, deny: deny,
-		cpus: cpuCount, memoryMiB: memoryMiB,
+		cpus: cpuCount, memoryMiB: memoryMiB, env: env,
 	}, false, nil
 }
 
@@ -1027,4 +1031,20 @@ func formatPorts(sb *sdk.Sandbox) string {
 		parts = append(parts, fmt.Sprintf("%d->%d/%s", sb.Ports[i].Host, sb.Ports[i].Guest, protocol))
 	}
 	return strings.Join(parts, ", ")
+}
+
+func resolveCreateNetwork(publish, allow, deny []string) ([]sdk.Port, []sdk.NetworkRule, []sdk.NetworkRule, error) {
+	ports, err := resolvePorts(publish)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	allowRules, err := resolveNetworkRules(allow)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	denyRules, err := resolveNetworkRules(deny)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return ports, allowRules, denyRules, nil
 }

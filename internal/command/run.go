@@ -555,6 +555,7 @@ func (r *Runner) createRunSandbox(ctx context.Context, client sdk.Client, opts r
 		Detached:   opts.detach,
 		CPUs:       resources.cpus,
 		MemoryMiB:  resources.memory,
+		Env:        envMap(resources.env),
 	})
 	if err != nil {
 		return r.recoverRunCreate(ctx, client, opts.name, err)
