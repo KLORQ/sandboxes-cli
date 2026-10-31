@@ -165,3 +165,17 @@ func validUserToken(token string) bool {
 	}
 	return true
 }
+
+func envMap(entries []string) map[string]string {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok {
+			out[key] = value
+		}
+	}
+	return out
+}
