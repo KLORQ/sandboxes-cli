@@ -32,22 +32,11 @@ func TestCreatePolicyProfile(t *testing.T) {
 	sandbox := &recordingCreateSandbox{}
 	var out bytes.Buffer
 	runner := &Runner{Out: &out, Err: &out, NewClient: func(string) (sdk.Client, error) { return fakeClient{sandbox: sandbox}, nil }}
-	if code := runner.Run(context.Background(), []string{"create", "--policy-profile", "sbx-compat", "--name", "compat", "shell", workspace}); code != 0 {
+	if code := runner.Run(context.Background(), []string{"create", "--policy-profile", "allow-all", "--name", "compat", "shell", workspace}); code != 0 {
 		t.Fatalf("exit=%d output=%q", code, out.String())
 	}
-	if len(sandbox.request.Allow) != 2 {
-		t.Fatalf("allow=%+v", sandbox.request.Allow)
-	}
-}
-
-func TestCreateRejectsUnknownPolicyProfile(t *testing.T) {
-	called := false
-	runner := &Runner{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, NewClient: func(string) (sdk.Client, error) {
-		called = true
-		return fakeClient{}, nil
-	}}
-	if code := runner.Run(context.Background(), []string{"create", "--policy-profile", "unknown", "shell"}); code != 2 || called {
-		t.Fatalf("exit=%d client=%t", code, called)
+	if sandbox.request.PolicyProfile != "allow-all" || len(sandbox.request.Allow) != 0 {
+		t.Fatalf("request=%+v", sandbox.request)
 	}
 }
 
@@ -58,7 +47,7 @@ func TestRunPolicyProfile(t *testing.T) {
 	if code := runner.Run(context.Background(), []string{"run", "--policy-profile", "balanced", "--name", "balanced", "shell", t.TempDir()}); code != 0 {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", code, out.String(), stderr.String())
 	}
-	if len(sandboxes.created.Allow) != 4 {
-		t.Fatalf("allow=%+v", sandboxes.created.Allow)
+	if sandboxes.created.PolicyProfile != "balanced" || len(sandboxes.created.Allow) != 0 {
+		t.Fatalf("request=%+v", sandboxes.created)
 	}
 }

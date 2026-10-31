@@ -79,12 +79,13 @@ var dockerSbxAgents = []string{
 }
 
 type runResources struct {
-	cpus   uint32
-	memory uint32
-	env    []string
-	ports  []sdk.Port
-	allow  []sdk.NetworkRule
-	deny   []sdk.NetworkRule
+	cpus    uint32
+	memory  uint32
+	env     []string
+	profile string
+	ports   []sdk.Port
+	allow   []sdk.NetworkRule
+	deny    []sdk.NetworkRule
 }
 
 type runOptions struct {
@@ -214,10 +215,6 @@ func prepareRunResources(opts runOptions) (runResources, error) {
 	if err != nil {
 		return runResources{}, err
 	}
-	allow, err = mergeProfileRules(opts.profile, allow)
-	if err != nil {
-		return runResources{}, err
-	}
 	deny, err := resolveNetworkRules(opts.deny)
 	if err != nil {
 		return runResources{}, err
@@ -226,7 +223,7 @@ func prepareRunResources(opts runOptions) (runResources, error) {
 	if err != nil {
 		return runResources{}, err
 	}
-	return runResources{cpus: cpus, memory: memoryMiB, env: env, ports: ports, allow: allow, deny: deny}, nil
+	return runResources{cpus: cpus, memory: memoryMiB, env: env, profile: opts.profile, ports: ports, allow: allow, deny: deny}, nil
 }
 
 func (r *Runner) warnReusedResources(sandbox *sdk.Sandbox, opts runOptions, resources runResources) {
@@ -555,18 +552,19 @@ func (r *Runner) createRunSandbox(ctx context.Context, client sdk.Client, opts r
 		workspace = workspaces[0].Path
 	}
 	op, err := client.Sandboxes().Create(ctx, sdk.CreateRequest{
-		Name:       name,
-		Image:      opts.image,
-		Workspace:  workspace,
-		Workspaces: workspaces,
-		Ports:      resources.ports,
-		Allow:      resources.allow,
-		Deny:       resources.deny,
-		Agent:      agent,
-		Detached:   opts.detach,
-		CPUs:       resources.cpus,
-		MemoryMiB:  resources.memory,
-		Env:        envMap(resources.env),
+		Name:          name,
+		Image:         opts.image,
+		Workspace:     workspace,
+		Workspaces:    workspaces,
+		Ports:         resources.ports,
+		Allow:         resources.allow,
+		Deny:          resources.deny,
+		Agent:         agent,
+		Detached:      opts.detach,
+		CPUs:          resources.cpus,
+		MemoryMiB:     resources.memory,
+		PolicyProfile: resources.profile,
+		Env:           envMap(resources.env),
 	})
 	if err != nil {
 		return r.recoverRunCreate(ctx, client, opts.name, err)

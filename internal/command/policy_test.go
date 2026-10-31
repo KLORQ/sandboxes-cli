@@ -91,9 +91,22 @@ type policyUpdateClient struct {
 	fakeClient
 	base        *lifecycleSandbox
 	allow, deny []sdk.NetworkRule
+	profile     string
 }
 
 func (p *policyUpdateClient) PolicyService() sdk.PolicyService { return p }
+
+func (p *policyUpdateClient) GetPolicyProfile(context.Context) (string, error) {
+	if p.profile == "" {
+		return "deny-all", nil
+	}
+	return p.profile, nil
+}
+
+func (p *policyUpdateClient) SetPolicyProfile(_ context.Context, profile string) (string, error) {
+	p.profile = profile
+	return profile, nil
+}
 
 func (p *policyUpdateClient) UpdatePolicy(_ context.Context, id string, allow, deny []sdk.NetworkRule) (*sdk.Sandbox, error) {
 	_ = id
@@ -155,5 +168,27 @@ func TestPolicyDynamicUpdates(t *testing.T) {
 	out.Reset()
 	if code := runner.Run(context.Background(), []string{"policy", "rm", "dev", "192.0.2.0/24"}); code != 1 {
 		t.Fatalf("missing rm exit=%d output=%q", code, out.String())
+	}
+}
+
+func TestPolicyInitAndProfile(t *testing.T) {
+	client := &policyUpdateClient{}
+	var out bytes.Buffer
+	runner := &Runner{Out: &out, Err: &out, NewClient: func(string) (sdk.Client, error) { return client, nil }}
+	if code := runner.Run(context.Background(), []string{"policy", "init", "balanced"}); code != 0 {
+		t.Fatalf("init exit=%d output=%q", code, out.String())
+	}
+	if client.profile != "balanced" {
+		t.Fatalf("profile=%q", client.profile)
+	}
+	out.Reset()
+	if code := runner.Run(context.Background(), []string{"policy", "profile", "ls"}); code != 0 {
+		t.Fatalf("profile exit=%d output=%q", code, out.String())
+	}
+	if !strings.Contains(out.String(), "balanced") {
+		t.Fatalf("output=%q", out.String())
+	}
+	if code := runner.Run(context.Background(), []string{"policy", "init", "unknown"}); code != 2 {
+		t.Fatalf("unknown init exit=%d", code)
 	}
 }
