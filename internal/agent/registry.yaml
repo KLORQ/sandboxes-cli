@@ -1,0 +1,40 @@
+# Built-in agent registry. Status: available (live-tested), preview (image
+# contract known, not fully validated), unsupported (explicitly rejected).
+agents:
+  - name: shell
+    command: ["/bin/sh"]
+    status: available
+  - name: kimi
+    image: ghcr.io/klorq/sandbox-kimi:0.43.0
+    command: ["kimi"]
+    status: preview
+    notes: image publish pending
+  - name: codex
+    image: docker/sandbox-templates:codex-docker
+    command: ["codex"]
+    status: preview
+    notes: official image; command contract not live-tested
+  - name: gemini
+    image: docker/sandbox-templates:gemini-docker
+    command: ["gemini"]
+    status: preview
+  - name: opencode
+    image: docker/sandbox-templates:opencode-docker
+    command: ["opencode"]
+    status: preview
+  - name: claude
+    status: unsupported
+  - name: cline
+    status: unsupported
+  - name: copilot
+    status: unsupported
+  - name: cursor
+    status: unsupported
+  - name: devin
+    status: unsupported
+  - name: docker-agent
+    status: unsupported
+  - name: droid
+    status: unsupported
+  - name: kiro
+    status: unsupported

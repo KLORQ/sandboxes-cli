@@ -23,9 +23,10 @@ The default workspace is the current directory. With --detach the sandbox is
 created and started, and its ID is printed without attaching.
 
 Agents:
-  shell    available
-  claude, codex, copilot, cursor, devin, docker-agent, droid, gemini, kiro,
-  opencode  listed by the Docker sbx baseline; agent images are not implemented
+  shell, kimi              available
+  codex, gemini, opencode  preview (official image, not live-tested)
+  claude, cline, copilot, cursor, devin, docker-agent, droid, kiro
+                           unsupported
 
 Flags:
       --name NAME   sandbox name; reuse and restart it when it already exists
@@ -72,11 +73,6 @@ Flags:
 )
 
 var errRunAgentRequired = errors.New("agent is required when --name is not set")
-
-var dockerSbxAgents = []string{
-	"claude", "codex", "copilot", "cursor", "devin", "docker-agent",
-	"droid", "gemini", "kiro", "opencode", shellAgent,
-}
 
 type runResources struct {
 	cpus    uint32
@@ -128,6 +124,9 @@ func (r *Runner) run(ctx context.Context, args []string) int {
 			_, _ = fmt.Fprint(r.Err, runUsage)
 		}
 		return 2
+	}
+	if agent != "" && opts.image == "" {
+		opts.image = agentImage(agent)
 	}
 	resources, err := prepareRunResources(opts)
 	if err != nil {
@@ -441,35 +440,21 @@ func validateRunRequest(opts runOptions, agent string) error {
 	return nil
 }
 
-func validateRunAgent(agent string) error {
-	if agent == shellAgent {
-		return nil
-	}
-	for _, known := range dockerSbxAgents {
-		if known == agent {
-			return fmt.Errorf("agent %q is not implemented yet; only the shell agent is available", agent)
-		}
-	}
-	return fmt.Errorf("unknown agent %q; use one of: %s", agent, strings.Join(dockerSbxAgents, ", "))
+func validateRunAgent(name string) error {
+	return validateAgent(name)
 }
 
 func isAgentName(value string) bool {
-	if value == shellAgent {
-		return true
+	registry, err := agentRegistry()
+	if err != nil {
+		return false
 	}
-	for _, known := range dockerSbxAgents {
-		if value == known {
-			return true
-		}
-	}
-	return false
+	_, ok := registry.Lookup(value)
+	return ok
 }
 
-func runArgv(agent string, agentArgs []string) []string {
-	if agent == shellAgent {
-		return append([]string{shellPath}, agentArgs...)
-	}
-	return append([]string{agent}, agentArgs...)
+func runArgv(name string, agentArgs []string) []string {
+	return append(agentCommandArgs(name), agentArgs...)
 }
 
 func runTerminal(input any) (interactive, tty bool) {

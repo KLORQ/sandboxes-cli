@@ -52,8 +52,11 @@ and prints the sandbox ID. `--cpus`/`--memory` apply only when creating;
 reusing an existing sandbox warns and keeps its resources. `-e/--env` and
 `--env-file` add session env overrides. `--rm` removes the sandbox after the
 session (rejected with `--detach`). Only the `shell` agent is implemented;
-`claude`, `codex` and the other Docker `sbx` agent names are rejected until
-their images and auth contracts exist. Multiple workspaces are supported; a
+`kimi` is available with the pinned `ghcr.io/klorq/sandbox-kimi:0.43.0` image
+(see `agents/kimi/`). `codex`, `gemini` and `opencode` are registered as
+preview using their official image names; `claude`, `cline` and the remaining
+agents are explicitly unsupported until an image/auth contract exists. The
+embedded registry is `internal/agent/registry.yaml`. Multiple workspaces are supported; a
 `:ro` suffix mounts a directory read-only. `--publish HOST:GUEST[/tcp|udp]` may be
 repeated when creating; `ksbx ports SANDBOX` lists the stored bindings;
 `ports --publish HOST:GUEST` / `--unpublish [HOST:]GUEST` change them live;
