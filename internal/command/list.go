@@ -34,23 +34,24 @@ type listOptions struct {
 }
 
 type sandboxOutput struct {
-	Name       string       `json:"name" yaml:"name"`
-	ID         string       `json:"id" yaml:"id"`
-	Agent      string       `json:"agent" yaml:"agent"`
-	Status     string       `json:"status" yaml:"status"`
-	LastUsedAt string       `json:"last_used_at,omitempty" yaml:"last_used_at,omitempty"`
-	Detached   bool         `json:"detached,omitempty" yaml:"detached,omitempty"`
-	Image      string       `json:"image" yaml:"image"`
-	Workspaces []string     `json:"workspaces" yaml:"workspaces"`
-	Ports      []portOutput `json:"ports" yaml:"ports"`
-	Allow      []ruleOutput `json:"allow" yaml:"allow"`
-	Deny       []ruleOutput `json:"deny" yaml:"deny"`
-	CPUs       uint32       `json:"cpus" yaml:"cpus"`
-	MemoryMiB  uint32       `json:"memory_mib" yaml:"memory_mib"`
-	StoppedAt  string       `json:"stopped_at,omitempty" yaml:"stopped_at,omitempty"`
-	Generation int64        `json:"generation" yaml:"generation"`
-	CreatedAt  string       `json:"created_at" yaml:"created_at"`
-	UpdatedAt  string       `json:"updated_at" yaml:"updated_at"`
+	Name          string       `json:"name" yaml:"name"`
+	ID            string       `json:"id" yaml:"id"`
+	Agent         string       `json:"agent" yaml:"agent"`
+	Status        string       `json:"status" yaml:"status"`
+	LastUsedAt    string       `json:"last_used_at,omitempty" yaml:"last_used_at,omitempty"`
+	Detached      bool         `json:"detached,omitempty" yaml:"detached,omitempty"`
+	PolicyProfile string       `json:"policy_profile,omitempty" yaml:"policy_profile,omitempty"`
+	Image         string       `json:"image" yaml:"image"`
+	Workspaces    []string     `json:"workspaces" yaml:"workspaces"`
+	Ports         []portOutput `json:"ports" yaml:"ports"`
+	Allow         []ruleOutput `json:"allow" yaml:"allow"`
+	Deny          []ruleOutput `json:"deny" yaml:"deny"`
+	CPUs          uint32       `json:"cpus" yaml:"cpus"`
+	MemoryMiB     uint32       `json:"memory_mib" yaml:"memory_mib"`
+	StoppedAt     string       `json:"stopped_at,omitempty" yaml:"stopped_at,omitempty"`
+	Generation    int64        `json:"generation" yaml:"generation"`
+	CreatedAt     string       `json:"created_at" yaml:"created_at"`
+	UpdatedAt     string       `json:"updated_at" yaml:"updated_at"`
 }
 
 func (r *Runner) list(ctx context.Context, args []string) int {
@@ -179,23 +180,24 @@ func sandboxOutputFor(sb *sdk.Sandbox) sandboxOutput {
 		workspaces = append(workspaces, sb.Workspace)
 	}
 	return sandboxOutput{
-		Name:       sb.Name,
-		ID:         sb.ID,
-		Agent:      sb.Agent,
-		Status:     sb.State,
-		LastUsedAt: listTime(sb.LastUsedAt),
-		Detached:   sb.Detached,
-		Image:      sb.Image,
-		Workspaces: workspaces,
-		Ports:      portsFor(sb),
-		Allow:      allowRules(sb),
-		Deny:       denyRules(sb),
-		CPUs:       sb.CPUs,
-		MemoryMiB:  sb.MemoryMiB,
-		StoppedAt:  listTime(sb.StoppedAt),
-		Generation: sb.Generation,
-		CreatedAt:  listTime(sb.CreatedAt),
-		UpdatedAt:  listTime(sb.UpdatedAt),
+		Name:          sb.Name,
+		ID:            sb.ID,
+		Agent:         sb.Agent,
+		Status:        sb.State,
+		LastUsedAt:    listTime(sb.LastUsedAt),
+		Detached:      sb.Detached,
+		PolicyProfile: sb.PolicyProfile,
+		Image:         sb.Image,
+		Workspaces:    workspaces,
+		Ports:         portsFor(sb),
+		Allow:         allowRules(sb),
+		Deny:          denyRules(sb),
+		CPUs:          sb.CPUs,
+		MemoryMiB:     sb.MemoryMiB,
+		StoppedAt:     listTime(sb.StoppedAt),
+		Generation:    sb.Generation,
+		CreatedAt:     listTime(sb.CreatedAt),
+		UpdatedAt:     listTime(sb.UpdatedAt),
 	}
 }
 
@@ -208,12 +210,19 @@ func listTime(value time.Time) string {
 
 func writeSandboxTable(out io.Writer, items []sdk.Sandbox) error {
 	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "SANDBOX\tAGENT\tSTATUS\tPORTS\tWORKSPACE\tCREATED")
+	_, _ = fmt.Fprintln(tw, "SANDBOX\tAGENT\tPROFILE\tSTATUS\tPORTS\tWORKSPACE\tCREATED")
 	for i := range items {
 		sb := &items[i]
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", sb.Name, formatAgent(sb.Agent), sb.State, formatPorts(sb), formatWorkspaces(sb), formatAge(sb.CreatedAt))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", sb.Name, formatAgent(sb.Agent), formatProfile(sb.PolicyProfile), sb.State, formatPorts(sb), formatWorkspaces(sb), formatAge(sb.CreatedAt))
 	}
 	return tw.Flush()
+}
+
+func formatProfile(profile string) string {
+	if profile == "" {
+		return "-"
+	}
+	return profile
 }
 
 func formatAgent(agent string) string {

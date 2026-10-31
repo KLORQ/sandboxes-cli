@@ -36,7 +36,11 @@ func (r *Runner) policy(ctx context.Context, args []string) int {
 		return r.policyCheck(ctx, args[1:])
 	case "allow", "deny", "rm":
 		return r.policyMutate(ctx, args[0], args[1:])
-	case "reset", "init", "refresh", "log", "approval", "profile":
+	case "init":
+		return r.policyInit(ctx, args[1:])
+	case "profile":
+		return r.policyProfile(ctx, args[1:])
+	case "reset", "refresh", "log", "approval":
 		_, _ = fmt.Fprintf(r.Err, "ksbx policy %s: this policy operation is not implemented\n", args[0])
 		return 1
 	case helpCommand, helpShort, helpFlag:
@@ -90,6 +94,51 @@ func (r *Runner) policyList(ctx context.Context, args []string) int {
 		r.error(err)
 		return 1
 	}
+	return 0
+}
+
+func (r *Runner) policyInit(ctx context.Context, args []string) int {
+	if len(args) != 1 {
+		_, _ = fmt.Fprintln(r.Err, "usage: ksbx policy init allow-all|balanced|deny-all")
+		return 2
+	}
+	profile := args[0]
+	if profile != "allow-all" && profile != "balanced" && profile != "deny-all" {
+		_, _ = fmt.Fprintln(r.Err, "profile must be allow-all, balanced or deny-all")
+		return 2
+	}
+	client, err := r.client()
+	if err != nil {
+		r.error(err)
+		return 1
+	}
+	defer func() { _ = client.Close() }()
+	applied, err := sdk.Policies(client).SetPolicyProfile(ctx, profile)
+	if err != nil {
+		r.error(err)
+		return 1
+	}
+	_, _ = fmt.Fprintf(r.Out, "global policy profile: %s\n", applied)
+	return 0
+}
+
+func (r *Runner) policyProfile(ctx context.Context, args []string) int {
+	if len(args) > 1 || (len(args) == 1 && args[0] != "ls" && args[0] != "list") {
+		_, _ = fmt.Fprintln(r.Err, "usage: ksbx policy profile [ls]")
+		return 2
+	}
+	client, err := r.client()
+	if err != nil {
+		r.error(err)
+		return 1
+	}
+	defer func() { _ = client.Close() }()
+	profile, err := sdk.Policies(client).GetPolicyProfile(ctx)
+	if err != nil {
+		r.error(err)
+		return 1
+	}
+	_, _ = fmt.Fprintf(r.Out, "global: %s\navailable: deny-all, balanced, allow-all\n", profile)
 	return 0
 }
 
@@ -261,7 +310,10 @@ Commands:
   allow SANDBOX CIDR[:PORT]               add an allow rule (live for running sandboxes)
   deny SANDBOX CIDR[:PORT]                add a deny rule (live for running sandboxes)
   rm SANDBOX CIDR[:PORT]                  remove an allow or deny rule
-  check SANDBOX IP PORT [PROTOCOL]         evaluate a request against stored rules
+  check SANDBOX IP PORT [PROTOCOL]        evaluate a request against stored rules
+  init allow-all|balanced|deny-all        set the global default profile
+  profile [ls]                            show the global default and available profiles
 
-reset/init/refresh/log/approvals/profiles are not implemented. Default is deny.
+reset/refresh/log/approvals and filesystem/domain rules are not implemented.
+Default is deny-all.
 `

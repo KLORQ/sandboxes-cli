@@ -590,6 +590,7 @@ func (r *Runner) create(ctx context.Context, args []string) int {
 		Agent:          opts.agent,
 		CPUs:           opts.cpus,
 		MemoryMiB:      opts.memoryMiB,
+		PolicyProfile:  opts.profile,
 		Env:            envMap(opts.env),
 	})
 	if err != nil {
@@ -676,10 +677,6 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	}
 	workspace := firstWorkspacePath(workspaces)
 	ports, allow, deny, err := resolveCreateNetwork(publishFlags, allowFlags, denyFlags)
-	if err != nil {
-		return createOptions{}, false, err
-	}
-	allow, err = mergeProfileRules(*profile, allow)
 	if err != nil {
 		return createOptions{}, false, err
 	}
@@ -968,8 +965,8 @@ func (r *Runner) printSandbox(sb *sdk.Sandbox) {
 		_, _ = fmt.Fprintln(r.Out, "not found")
 		return
 	}
-	_, _ = fmt.Fprintf(r.Out, "id: %s\nname: %s\nstate: %s\nagent: %s\ndetached: %t\nlast_used_at: %s\nimage: %s\nworkspace: %s\nworkspaces: %s\nports: %s\nallow: %s\ndeny: %s\ncpus: %d\nmemory_mib: %d\nstopped_at: %s\ngeneration: %d\ncreated: %s\n",
-		sb.ID, sb.Name, sb.State, formatAgent(sb.Agent), sb.Detached, formatTime(sb.LastUsedAt), sb.Image, sb.Workspace, formatWorkspaces(sb), formatPorts(sb), formatRules(sb.Allow), formatRules(sb.Deny),
+	_, _ = fmt.Fprintf(r.Out, "id: %s\nname: %s\nstate: %s\nagent: %s\npolicy_profile: %s\ndetached: %t\nlast_used_at: %s\nimage: %s\nworkspace: %s\nworkspaces: %s\nports: %s\nallow: %s\ndeny: %s\ncpus: %d\nmemory_mib: %d\nstopped_at: %s\ngeneration: %d\ncreated: %s\n",
+		sb.ID, sb.Name, sb.State, formatAgent(sb.Agent), sb.PolicyProfile, sb.Detached, formatTime(sb.LastUsedAt), sb.Image, sb.Workspace, formatWorkspaces(sb), formatPorts(sb), formatRules(sb.Allow), formatRules(sb.Deny),
 		sb.CPUs, sb.MemoryMiB, formatTime(sb.StoppedAt), sb.Generation, formatTime(sb.CreatedAt))
 }
 

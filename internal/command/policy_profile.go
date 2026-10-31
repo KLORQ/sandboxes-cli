@@ -36,23 +36,3 @@ func profileRules(profile string) ([]sdk.NetworkRule, error) {
 		return nil, fmt.Errorf("unknown policy profile %q (want deny-all, balanced or sbx-compat)", profile)
 	}
 }
-
-func mergeProfileRules(profile string, explicit []sdk.NetworkRule) ([]sdk.NetworkRule, error) {
-	profileRules, err := profileRules(profile)
-	if err != nil {
-		return nil, err
-	}
-	out := append([]sdk.NetworkRule(nil), profileRules...)
-	seen := make(map[sdk.NetworkRule]struct{}, len(out))
-	for _, rule := range out {
-		seen[rule] = struct{}{}
-	}
-	for _, rule := range explicit {
-		if _, exists := seen[rule]; exists {
-			continue
-		}
-		seen[rule] = struct{}{}
-		out = append(out, rule)
-	}
-	return out, nil
-}

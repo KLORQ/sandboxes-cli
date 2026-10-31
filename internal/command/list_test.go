@@ -16,7 +16,7 @@ type twoSandbox struct{ fakeSandbox }
 func (twoSandbox) List(context.Context, sdk.ListOptions) (*sdk.Page[sdk.Sandbox], error) {
 	return &sdk.Page[sdk.Sandbox]{Items: []sdk.Sandbox{
 		{
-			ID: "sb-1", Name: "one", State: sdk.StateRunning, Image: "alpine", Agent: "shell", Detached: true,
+			ID: "sb-1", Name: "one", State: sdk.StateRunning, Image: "alpine", Agent: "shell", Detached: true, PolicyProfile: "balanced",
 			LastUsedAt: time.Date(2026, 10, 31, 1, 2, 5, 0, time.UTC),
 			Workspace:  "/workspace", Generation: 2,
 			Ports:     []sdk.Port{{Host: 8080, Guest: 3000, Protocol: "tcp"}},
@@ -44,7 +44,7 @@ func TestListJSONMatchesDocumentedFields(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &items); err != nil {
 		t.Fatalf("invalid JSON %q: %v", out.String(), err)
 	}
-	if len(items) != 2 || items[0].Name != "one" || items[0].Status != sdk.StateRunning ||
+	if len(items) != 2 || items[0].Name != "one" || items[0].Status != sdk.StateRunning || items[0].PolicyProfile != "balanced" ||
 		len(items[0].Workspaces) != 1 || items[0].Workspaces[0] != "/workspace" ||
 		len(items[0].Ports) != 1 || items[0].Ports[0].HostPort != 8080 ||
 		items[0].Agent != "shell" || !items[0].Detached ||
