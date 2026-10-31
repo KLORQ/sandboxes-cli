@@ -656,6 +656,9 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	if err != nil {
 		return createOptions{}, false, err
 	}
+	if agent != "" && *image == "" {
+		*image = agentImage(agent)
+	}
 	cpuCount, err := validateCPUs(*cpus)
 	if err != nil {
 		return createOptions{}, false, err

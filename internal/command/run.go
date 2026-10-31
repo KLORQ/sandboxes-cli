@@ -23,9 +23,9 @@ The default workspace is the current directory. With --detach the sandbox is
 created and started, and its ID is printed without attaching.
 
 Agents:
-  shell    available
+  shell, kimi  available
   claude, codex, copilot, cursor, devin, docker-agent, droid, gemini, kiro,
-  opencode  listed by the Docker sbx baseline; agent images are not implemented
+  opencode     listed by the Docker sbx baseline; their images are not implemented
 
 Flags:
       --name NAME   sandbox name; reuse and restart it when it already exists
@@ -75,7 +75,7 @@ var errRunAgentRequired = errors.New("agent is required when --name is not set")
 
 var dockerSbxAgents = []string{
 	"claude", "codex", "copilot", "cursor", "devin", "docker-agent",
-	"droid", "gemini", "kiro", "opencode", shellAgent,
+	"droid", "gemini", "kiro", "opencode", shellAgent, kimiAgent,
 }
 
 type runResources struct {
@@ -128,6 +128,9 @@ func (r *Runner) run(ctx context.Context, args []string) int {
 			_, _ = fmt.Fprint(r.Err, runUsage)
 		}
 		return 2
+	}
+	if agent != "" && opts.image == "" {
+		opts.image = agentImage(agent)
 	}
 	resources, err := prepareRunResources(opts)
 	if err != nil {
@@ -442,7 +445,7 @@ func validateRunRequest(opts runOptions, agent string) error {
 }
 
 func validateRunAgent(agent string) error {
-	if agent == shellAgent {
+	if agent == shellAgent || agent == kimiAgent {
 		return nil
 	}
 	for _, known := range dockerSbxAgents {
@@ -454,7 +457,7 @@ func validateRunAgent(agent string) error {
 }
 
 func isAgentName(value string) bool {
-	if value == shellAgent {
+	if value == shellAgent || value == kimiAgent {
 		return true
 	}
 	for _, known := range dockerSbxAgents {
@@ -466,10 +469,7 @@ func isAgentName(value string) bool {
 }
 
 func runArgv(agent string, agentArgs []string) []string {
-	if agent == shellAgent {
-		return append([]string{shellPath}, agentArgs...)
-	}
-	return append([]string{agent}, agentArgs...)
+	return append([]string{agentCommand(agent)}, agentArgs...)
 }
 
 func runTerminal(input any) (interactive, tty bool) {
