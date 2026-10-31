@@ -3,7 +3,9 @@
 Status: pre-alpha.
 
 Command-line and terminal client. Uses sandboxes-go-sdk; does not import daemon
-internals.
+internals. The planned dashboard uses `github.com/gdamore/tcell/v3` as its
+terminal runtime. Bubble Tea is not used. TUI remains a thin view/input layer;
+non-interactive commands retain stable text and JSON output.
 
 ## Commands
 
