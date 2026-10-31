@@ -46,7 +46,7 @@ func TestListJSONMatchesDocumentedFields(t *testing.T) {
 	}
 	if len(items) != 2 || items[0].Name != "one" || items[0].Status != sdk.StateRunning ||
 		len(items[0].Workspaces) != 1 || items[0].Workspaces[0] != "/workspace" ||
-		len(items[0].Ports) != 1 || items[0].Ports[0].Host != 8080 ||
+		len(items[0].Ports) != 1 || items[0].Ports[0].HostPort != 8080 ||
 		items[0].Agent != "shell" || !items[0].Detached ||
 		items[0].LastUsedAt != "2026-10-31T01:02:05Z" ||
 		items[0].CreatedAt != "2026-10-31T01:02:03.000000004Z" {

@@ -23,9 +23,10 @@ const (
 )
 
 type portOutput struct {
-	Host     uint16 `json:"host" yaml:"host"`
-	Guest    uint16 `json:"guest" yaml:"guest"`
-	Protocol string `json:"protocol" yaml:"protocol"`
+	HostIP      string `json:"host_ip" yaml:"host_ip"`
+	HostPort    uint16 `json:"host_port" yaml:"host_port"`
+	SandboxPort uint16 `json:"sandbox_port" yaml:"sandbox_port"`
+	Protocol    string `json:"protocol" yaml:"protocol"`
 }
 
 func parsePublishSpec(value string) (sdk.Port, error) {
@@ -38,15 +39,20 @@ func parsePortSpec(value string, allocateHost bool) (sdk.Port, error) {
 		value = before
 		protocol = after
 	}
-	if protocol != tcpProtocol && protocol != udpProtocol {
-		return sdk.Port{}, errors.New("port protocol must be tcp or udp")
+	switch protocol {
+	case "tcp", "tcp4":
+		protocol = tcpProtocol
+	case "udp", "udp4":
+		protocol = udpProtocol
+	default:
+		return sdk.Port{}, errors.New("port protocol must be tcp, udp, tcp4 or udp4")
 	}
 	parts := strings.Split(value, ":")
 	if len(parts) == 1 {
 		return ephemeralPort(parts[0], protocol, allocateHost)
 	}
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return sdk.Port{}, errors.New("port spec must be HOST:GUEST[/tcp] or GUEST[/tcp]")
+		return sdk.Port{}, errors.New("port spec must be HOST:GUEST[/tcp|udp] or GUEST[/tcp]")
 	}
 	host, err := strconv.ParseUint(parts[0], 10, 16)
 	if err != nil || host == 0 {
@@ -60,12 +66,12 @@ func parsePortSpec(value string, allocateHost bool) (sdk.Port, error) {
 }
 
 func ephemeralPort(value, protocol string, allocateHost bool) (sdk.Port, error) {
-	if !allocateHost {
-		return sdk.Port{}, errors.New("unpublish must be HOST:GUEST[/tcp]")
-	}
 	guest, err := strconv.ParseUint(value, 10, 16)
 	if err != nil || guest == 0 {
 		return sdk.Port{}, errors.New("guest port must be 1..65535")
+	}
+	if !allocateHost {
+		return sdk.Port{Guest: uint16(guest), Protocol: protocol}, nil
 	}
 	host, err := allocateHostPort()
 	if err != nil {
@@ -117,9 +123,19 @@ func resolvePortSpecs(values []string, allocateHost bool) ([]sdk.Port, error) {
 func portsFor(sb *sdk.Sandbox) []portOutput {
 	out := make([]portOutput, 0, len(sb.Ports))
 	for i := range sb.Ports {
-		out = append(out, portOutput{Host: sb.Ports[i].Host, Guest: sb.Ports[i].Guest, Protocol: sb.Ports[i].Protocol})
+		out = append(out, portOutput{
+			HostIP: "127.0.0.1", HostPort: sb.Ports[i].Host,
+			SandboxPort: sb.Ports[i].Guest, Protocol: displayPortProtocol(sb.Ports[i].Protocol),
+		})
 	}
 	return out
+}
+
+func displayPortProtocol(protocol string) string {
+	if protocol == udpProtocol {
+		return "udp4"
+	}
+	return "tcp4"
 }
 
 func (r *Runner) ports(ctx context.Context, args []string) int {
@@ -128,8 +144,8 @@ func (r *Runner) ports(ctx context.Context, args []string) int {
 	format := fs.String("format", listFormatTable, "output format: table, json or yaml")
 	jsonOutput := fs.Bool("json", false, "output in JSON format")
 	var publishFlags, unpublishFlags stringListFlag
-	fs.Var(&publishFlags, "publish", "publish HOST:GUEST[/tcp] (repeatable)")
-	fs.Var(&unpublishFlags, "unpublish", "unpublish HOST:GUEST[/tcp] (repeatable)")
+	fs.Var(&publishFlags, "publish", "publish HOST:GUEST[/tcp|udp] (repeatable)")
+	fs.Var(&unpublishFlags, "unpublish", "unpublish HOST:GUEST[/tcp|udp] (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -137,7 +153,7 @@ func (r *Runner) ports(ctx context.Context, args []string) int {
 		return 2
 	}
 	if fs.NArg() != 1 {
-		_, _ = fmt.Fprintln(r.Err, "usage: ksbx ports [--publish HOST:GUEST] [--unpublish HOST:GUEST] [--format table|json|yaml] SANDBOX")
+		_, _ = fmt.Fprintln(r.Err, "usage: ksbx ports [--publish HOST:GUEST] [--unpublish [HOST:]GUEST] [--format table|json|yaml] SANDBOX")
 		return 2
 	}
 	if len(publishFlags) > 0 || len(unpublishFlags) > 0 {
@@ -177,11 +193,6 @@ func (r *Runner) portsMutate(ctx context.Context, sandbox string, publishFlags, 
 		r.error(err)
 		return 2
 	}
-	unpublished, err := resolvePortSpecs(unpublishFlags, false)
-	if err != nil {
-		r.error(err)
-		return 2
-	}
 	client, err := r.client()
 	if err != nil {
 		r.error(err)
@@ -198,6 +209,11 @@ func (r *Runner) portsMutate(ctx context.Context, sandbox string, publishFlags, 
 		r.error(err)
 		return 1
 	}
+	unpublished, err := resolveUnpublishPorts(sb.Ports, unpublishFlags)
+	if err != nil {
+		r.error(err)
+		return 1
+	}
 	ports, err := applyPortChanges(sb.Ports, published, unpublished)
 	if err != nil {
 		r.error(err)
@@ -208,8 +224,53 @@ func (r *Runner) portsMutate(ctx context.Context, sandbox string, publishFlags, 
 		r.error(err)
 		return 1
 	}
-	_, _ = fmt.Fprintf(r.Out, "updated ports for %s (%d)\n", updated.Name, len(updated.Ports))
+	for _, requested := range published {
+		host := requested.Host
+		for _, actual := range updated.Ports {
+			if actual.Guest == requested.Guest && actual.Protocol == requested.Protocol {
+				host = actual.Host
+				break
+			}
+		}
+		_, _ = fmt.Fprintf(r.Out, "Published 127.0.0.1:%d -> %d/%s\n", host, requested.Guest, displayPortProtocol(requested.Protocol))
+	}
+	for _, requested := range unpublished {
+		_, _ = fmt.Fprintf(r.Out, "Unpublish requested for port %d -> %d\n", requested.Host, requested.Guest)
+	}
+	if len(published) == 0 && len(unpublished) == 0 {
+		_, _ = fmt.Fprintf(r.Out, "updated ports for %s (%d)\n", updated.Name, len(updated.Ports))
+	}
 	return 0
+}
+
+func resolveUnpublishPorts(existing []sdk.Port, values []string) ([]sdk.Port, error) {
+	out := make([]sdk.Port, 0, len(values))
+	for _, value := range values {
+		requested, err := parsePortSpec(value, false)
+		if err != nil {
+			return nil, err
+		}
+		if requested.Host != 0 {
+			out = append(out, requested)
+			continue
+		}
+		var match *sdk.Port
+		for i := range existing {
+			if existing[i].Guest != requested.Guest || existing[i].Protocol != requested.Protocol {
+				continue
+			}
+			if match != nil {
+				return nil, fmt.Errorf("guest port %d/%s has multiple host mappings; specify HOST:GUEST", requested.Guest, requested.Protocol)
+			}
+			match = &existing[i]
+		}
+		if match == nil {
+			return nil, fmt.Errorf("port %d/%s is not published", requested.Guest, requested.Protocol)
+		}
+		requested.Host = match.Host
+		out = append(out, requested)
+	}
+	return out, nil
 }
 
 func applyPortChanges(existing, published, unpublished []sdk.Port) ([]sdk.Port, error) {
@@ -262,9 +323,9 @@ func renderPortList(out io.Writer, format string, ports []portOutput) error {
 
 func writePortTable(out io.Writer, ports []portOutput) error {
 	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "HOST\tGUEST\tPROTOCOL")
+	_, _ = fmt.Fprintln(tw, "HOST IP\tHOST PORT\tSANDBOX PORT\tPROTOCOL")
 	for _, port := range ports {
-		_, _ = fmt.Fprintf(tw, "%d\t%d\t%s\n", port.Host, port.Guest, port.Protocol)
+		_, _ = fmt.Fprintf(tw, "%s\t%d\t%d\t%s\n", port.HostIP, port.HostPort, port.SandboxPort, port.Protocol)
 	}
 	return tw.Flush()
 }
