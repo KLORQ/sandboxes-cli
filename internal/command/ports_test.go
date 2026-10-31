@@ -69,7 +69,8 @@ func TestPortsCommandListsPorts(t *testing.T) {
 	if code := runner.Run(context.Background(), []string{"ports", "dev"}); code != 0 {
 		t.Fatalf("exit=%d output=%q", code, out.String())
 	}
-	if !strings.Contains(out.String(), "8080") || !strings.Contains(out.String(), "3000") {
+	if !strings.Contains(out.String(), "HOST IP") || !strings.Contains(out.String(), "SANDBOX PORT") ||
+		!strings.Contains(out.String(), "127.0.0.1") || !strings.Contains(out.String(), "tcp4") {
 		t.Fatalf("unexpected output: %q", out.String())
 	}
 	var jsonOut bytes.Buffer
@@ -78,7 +79,7 @@ func TestPortsCommandListsPorts(t *testing.T) {
 		t.Fatalf("json exit=%d output=%q", code, jsonOut.String())
 	}
 	var ports []portOutput
-	if err := json.Unmarshal(jsonOut.Bytes(), &ports); err != nil || len(ports) != 1 || ports[0].Host != 8080 {
+	if err := json.Unmarshal(jsonOut.Bytes(), &ports); err != nil || len(ports) != 1 || ports[0].HostPort != 8080 {
 		t.Fatalf("ports=%+v err=%v", ports, err)
 	}
 }
@@ -110,6 +111,9 @@ func TestPortsDynamicPublishAndUnpublish(t *testing.T) {
 	if len(client.ports) != 1 || client.ports[0].Host != 18090 {
 		t.Fatalf("ports=%+v", client.ports)
 	}
+	if !strings.Contains(out.String(), "Published 127.0.0.1:18090 -> 8080/tcp4") {
+		t.Fatalf("publish output=%q", out.String())
+	}
 	out.Reset()
 	if code := runner.Run(context.Background(), []string{"ports", "--publish", "18090:8081", "dev"}); code != 1 {
 		t.Fatalf("duplicate publish exit=%d", code)
@@ -139,7 +143,10 @@ func TestPortsDynamicEphemeralPublish(t *testing.T) {
 		t.Fatalf("ports=%+v", client.ports)
 	}
 	out.Reset()
-	if code := runner.Run(context.Background(), []string{"ports", "--unpublish", "8080", "dev"}); code != 2 {
+	if code := runner.Run(context.Background(), []string{"ports", "--unpublish", "8080", "dev"}); code != 0 {
 		t.Fatalf("guest-only unpublish exit=%d output=%q", code, out.String())
+	}
+	if len(client.ports) != 0 || !strings.Contains(out.String(), "Unpublish requested for port") {
+		t.Fatalf("ports=%+v output=%q", client.ports, out.String())
 	}
 }

@@ -54,9 +54,9 @@ reusing an existing sandbox warns and keeps its resources. `-e/--env` and
 session (rejected with `--detach`). Only the `shell` agent is implemented;
 `claude`, `codex` and the other Docker `sbx` agent names are rejected until
 their images and auth contracts exist. Multiple workspaces are supported; a
-`:ro` suffix mounts a directory read-only. `--publish HOST:GUEST[/tcp]` may be
+`:ro` suffix mounts a directory read-only. `--publish HOST:GUEST[/tcp|udp]` may be
 repeated when creating; `ksbx ports SANDBOX` lists the stored bindings;
-`ports --publish HOST:GUEST` / `--unpublish HOST:GUEST` change them live;
+`ports --publish HOST:GUEST` / `--unpublish [HOST:]GUEST` change them live;
 `--publish GUEST` allocates an ephemeral loopback host port.
 `--allow-network CIDR[:PORT]` and `--deny-network CIDR[:PORT]` (optional `udp:`
 prefix) add create-time IPv4 egress rules; the default remains deny. `ksbx
