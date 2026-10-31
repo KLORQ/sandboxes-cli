@@ -21,7 +21,3 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ghcr.io/klorq/sandbox-kimi:0.43.0
-      - name: Make package public
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh api --method PATCH /orgs/KLORQ/packages/container/sandbox-kimi -f visibility=public
