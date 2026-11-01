@@ -11,9 +11,15 @@ import (
 )
 
 type ruleOutput struct {
-	Protocol string `json:"protocol" yaml:"protocol"`
-	CIDR     string `json:"cidr" yaml:"cidr"`
-	Port     uint16 `json:"port" yaml:"port"`
+	RuleID       string `json:"rule_id" yaml:"rule_id"`
+	Scope        string `json:"scope" yaml:"scope"`
+	ResourceType string `json:"resource_type" yaml:"resource_type"`
+	Action       string `json:"action" yaml:"action"`
+	Provenance   string `json:"provenance" yaml:"provenance"`
+	Protocol     string `json:"protocol" yaml:"protocol"`
+	CIDR         string `json:"cidr,omitempty" yaml:"cidr,omitempty"`
+	Domain       string `json:"domain,omitempty" yaml:"domain,omitempty"`
+	Port         uint16 `json:"port" yaml:"port"`
 }
 
 func parseNetworkRule(value string) (sdk.NetworkRule, error) {
@@ -22,20 +28,64 @@ func parseNetworkRule(value string) (sdk.NetworkRule, error) {
 		protocol = udpProtocol
 		value = strings.TrimPrefix(value, "udp:")
 	}
-	cidr := value
+	target := value
 	port := uint16(0)
-	if index := strings.LastIndexByte(value, ':'); index > 0 {
-		parsed, err := strconv.ParseUint(value[index+1:], 10, 16)
+	if index := strings.LastIndexByte(target, ':'); index > 0 {
+		parsed, err := strconv.ParseUint(target[index+1:], 10, 16)
 		if err == nil {
+			if parsed == 0 {
+				return sdk.NetworkRule{}, errors.New("network rule port must be 1..65535")
+			}
 			port = uint16(parsed)
-			cidr = value[:index]
+			target = target[:index]
 		}
 	}
-	ip, _, err := net.ParseCIDR(cidr)
-	if err != nil || ip.To4() == nil {
-		return sdk.NetworkRule{}, errors.New("network rule CIDR must be IPv4 (CIDR[:PORT], optional udp: prefix)")
+	if strings.HasPrefix(target, "[") && strings.HasSuffix(target, "]") {
+		return sdk.NetworkRule{}, errors.New("network rule CIDR must be IPv4")
 	}
-	return sdk.NetworkRule{Protocol: protocol, CIDR: cidr, Port: port}, nil
+	if ip, _, err := net.ParseCIDR(target); err == nil {
+		if ip.To4() == nil {
+			return sdk.NetworkRule{}, errors.New("network rule CIDR must be IPv4")
+		}
+		return sdk.NetworkRule{Protocol: protocol, CIDR: target, Port: port}, nil
+	}
+	if target == "**" {
+		return sdk.NetworkRule{Protocol: protocol, CIDR: "0.0.0.0/0", Port: port}, nil
+	}
+	if err := validateCLIDomain(target); err != nil {
+		return sdk.NetworkRule{}, err
+	}
+	return sdk.NetworkRule{Protocol: protocol, Domain: strings.ToLower(target), Port: port}, nil
+}
+
+//nolint:gocyclo,cyclop // one compact grammar validator is clearer than a dispatch table.
+func validateCLIDomain(target string) error {
+	if target == "" || len(target) > 253 || strings.ContainsAny(target, "\\ ") {
+		return errors.New("network rule must be an IPv4 CIDR or a domain")
+	}
+	base := target
+	switch {
+	case strings.HasPrefix(base, "**."):
+		base = strings.TrimPrefix(base, "**.")
+	case strings.HasPrefix(base, "*."):
+		base = strings.TrimPrefix(base, "*.")
+	}
+	if base == "" || strings.Contains(base, "*") || strings.Contains(base, "://") {
+		return errors.New("invalid domain rule")
+	}
+	for _, label := range strings.Split(base, ".") {
+		if label == "" || len(label) > 63 {
+			return errors.New("invalid domain rule")
+		}
+		for _, r := range label {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+				r == '-' || r == '?' || r == '[' || r == ']' || r == '!' {
+				continue
+			}
+			return errors.New("invalid domain rule")
+		}
+	}
+	return nil
 }
 
 func resolveNetworkRules(values []string) ([]sdk.NetworkRule, error) {
@@ -57,7 +107,9 @@ func rulesFor(sb *sdk.Sandbox) (allow, deny []ruleOutput) {
 	convert := func(rules []sdk.NetworkRule) []ruleOutput {
 		out := make([]ruleOutput, 0, len(rules))
 		for i := range rules {
-			out = append(out, ruleOutput{Protocol: rules[i].Protocol, CIDR: rules[i].CIDR, Port: rules[i].Port})
+			out = append(out, ruleOutput{RuleID: rules[i].RuleID, Scope: "sandbox", ResourceType: "network",
+				Action: actionAllow, Provenance: "user", Protocol: rules[i].Protocol, CIDR: rules[i].CIDR,
+				Domain: rules[i].Domain, Port: rules[i].Port})
 		}
 		return out
 	}
@@ -78,7 +130,11 @@ func formatRules(rules []sdk.NetworkRule) string {
 		if protocol == "" {
 			protocol = tcpProtocol
 		}
-		parts = append(parts, fmt.Sprintf("%s:%s%s", protocol, rules[i].CIDR, port))
+		target := rules[i].CIDR
+		if rules[i].Domain != "" {
+			target = rules[i].Domain
+		}
+		parts = append(parts, fmt.Sprintf("%s:%s%s", protocol, target, port))
 	}
 	return strings.Join(parts, ", ")
 }

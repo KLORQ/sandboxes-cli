@@ -21,12 +21,14 @@ const (
 
 // Spec is one built-in agent definition.
 type Spec struct {
-	Name    string   `yaml:"name"`
-	Image   string   `yaml:"image"`
-	Command []string `yaml:"command"`
-	Status  Status   `yaml:"status"`
-	Docker  bool     `yaml:"docker,omitempty"`
-	Notes   string   `yaml:"notes,omitempty"`
+	Name          string   `yaml:"name"`
+	Image         string   `yaml:"image"`
+	Command       []string `yaml:"command"`
+	Status        Status   `yaml:"status"`
+	Docker        bool     `yaml:"docker,omitempty"`
+	DefaultPorts  []string `yaml:"default_ports,omitempty"`
+	DetachCommand []string `yaml:"detach_command,omitempty"`
+	Notes         string   `yaml:"notes,omitempty"`
 }
 
 // Registry is an immutable agent set.
@@ -47,7 +49,8 @@ func Load() (*Registry, error) {
 		return nil, fmt.Errorf("parse agent registry: %w", err)
 	}
 	r := &Registry{byName: make(map[string]Spec, len(doc.Agents))}
-	for _, spec := range doc.Agents {
+	for i := range doc.Agents {
+		spec := &doc.Agents[i]
 		spec.Name = strings.TrimSpace(spec.Name)
 		if spec.Name == "" {
 			return nil, fmt.Errorf("agent registry contains an empty name")
@@ -64,7 +67,7 @@ func Load() (*Registry, error) {
 		default:
 			return nil, fmt.Errorf("agent %q has unknown status %q", spec.Name, spec.Status)
 		}
-		r.byName[spec.Name] = spec
+		r.byName[spec.Name] = *spec
 		r.names = append(r.names, spec.Name)
 	}
 	sort.Strings(r.names)

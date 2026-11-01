@@ -119,6 +119,14 @@ func (p *policyUpdateClient) UpdatePolicy(_ context.Context, id string, allow, d
 	return &sdk.Sandbox{ID: "sb-1", Name: "dev", Allow: allow, Deny: deny}, nil
 }
 
+func (p *policyUpdateClient) GetGlobalPolicy(context.Context) ([]sdk.NetworkRule, []sdk.NetworkRule, error) {
+	return nil, nil, nil
+}
+
+func (p *policyUpdateClient) MutateGlobalPolicy(context.Context, string, sdk.NetworkRule) ([]sdk.NetworkRule, []sdk.NetworkRule, error) {
+	return nil, nil, nil
+}
+
 func (p *policyUpdateClient) MutatePolicy(ctx context.Context, id, action string, rule sdk.NetworkRule) (*sdk.Sandbox, error) {
 	allow := append([]sdk.NetworkRule(nil), p.base.items[0].Allow...)
 	deny := append([]sdk.NetworkRule(nil), p.base.items[0].Deny...)
@@ -190,5 +198,29 @@ func TestPolicyInitAndProfile(t *testing.T) {
 	}
 	if code := runner.Run(context.Background(), []string{"policy", "init", "unknown"}); code != 2 {
 		t.Fatalf("unknown init exit=%d", code)
+	}
+}
+
+func TestEvaluatePolicyName(t *testing.T) {
+	allow := []sdk.NetworkRule{
+		{Protocol: "tcp", Domain: "*.example.com", Port: 443},
+		{Protocol: "tcp", Domain: "api[12].example.net", Port: 443},
+	}
+	deny := []sdk.NetworkRule{{Protocol: "tcp", Domain: "secret.example.com", Port: 443}}
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{
+		{"api.example.com", true},
+		{"a.b.example.com", false},
+		{"example.com", false},
+		{"api1.example.net", true},
+		{"api3.example.net", false},
+		{"secret.example.com", false},
+	} {
+		got, _ := evaluatePolicyName(allow, deny, "tcp", tc.name, 443)
+		if got != tc.want {
+			t.Fatalf("evaluatePolicyName(%q)=%v, want %v", tc.name, got, tc.want)
+		}
 	}
 }

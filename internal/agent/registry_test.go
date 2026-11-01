@@ -1,6 +1,9 @@
 package agent
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRegistry(t *testing.T) {
 	r, err := Load()
@@ -8,7 +11,7 @@ func TestRegistry(t *testing.T) {
 		t.Fatal(err)
 	}
 	kimi, ok := r.Lookup("kimi")
-	if !ok || !kimi.Launchable() || kimi.Image != "ghcr.io/klorq/sandbox-kimi:0.43.0" || kimi.Command[0] != "kimi" {
+	if !ok || !kimi.Launchable() || !strings.HasPrefix(kimi.Image, "ghcr.io/klorq/sandbox-kimi@sha256:") || kimi.Command[0] != "kimi" {
 		t.Fatalf("kimi=%+v ok=%v", kimi, ok)
 	}
 	if claude, ok := r.Lookup("claude"); !ok || claude.Launchable() {

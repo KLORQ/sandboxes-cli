@@ -38,7 +38,7 @@ func TestCreateUsesSDK(t *testing.T) {
 	if code := runner.Run(context.Background(), []string{"create", "dev"}); code != 0 {
 		t.Fatalf("exit code %d, output %s", code, out.String())
 	}
-	if !strings.Contains(out.String(), "op-1") {
+	if !strings.Contains(out.String(), "SANDBOX") || !strings.Contains(out.String(), "Created sandbox dev") {
 		t.Fatalf("unexpected output: %s", out.String())
 	}
 }
@@ -257,7 +257,7 @@ func TestSecretHelpAndAlias(t *testing.T) {
 		if code := runner.Run(context.Background(), []string{name, "--help"}); code != 0 {
 			t.Fatalf("%s --help: exit=%d, output=%q", name, code, out.String())
 		}
-		if !strings.Contains(out.String(), "registry credentials only") {
+		if !strings.Contains(out.String(), "service secrets and registry credentials") {
 			t.Fatalf("missing current limitation: %q", out.String())
 		}
 	}

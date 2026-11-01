@@ -31,6 +31,9 @@ func (r *Runner) prune(ctx context.Context, args []string) int {
 		_, _ = fmt.Fprint(r.Out, pruneUsage)
 		return 0
 	}
+	if parseErr, ok := asFlagParseError(err); ok {
+		return r.flagParseFailure("prune", parseErr.err)
+	}
 	if err != nil {
 		r.error(err)
 		return 2
@@ -47,6 +50,13 @@ func (r *Runner) prune(ctx context.Context, args []string) int {
 		return 1
 	}
 	stopped := filterStopped(items, opts.until)
+	if opts.dryRun {
+		return r.pruneDryRun(opts, stopped)
+	}
+	return r.pruneRemove(ctx, client, opts, stopped)
+}
+
+func (r *Runner) pruneDryRun(opts pruneOptions, stopped []sdk.Sandbox) int {
 	if len(stopped) == 0 {
 		if opts.format == listFormatTable {
 			_, _ = fmt.Fprintln(r.Out, "No stopped sandboxes")
@@ -54,12 +64,20 @@ func (r *Runner) prune(ctx context.Context, args []string) int {
 		}
 		return pruneRender(r, opts.format, nil, nil)
 	}
-	if opts.dryRun {
+	if opts.format == listFormatTable {
+		printPruneCandidates(r.Out, stopped)
+		return 0
+	}
+	return pruneRender(r, opts.format, nil, stopped)
+}
+
+func (r *Runner) pruneRemove(ctx context.Context, client sdk.Client, opts pruneOptions, stopped []sdk.Sandbox) int {
+	if len(stopped) == 0 {
 		if opts.format == listFormatTable {
-			printPruneCandidates(r.Out, stopped)
+			_, _ = fmt.Fprintln(r.Out, "No stopped sandboxes")
 			return 0
 		}
-		return pruneRender(r, opts.format, nil, stopped)
+		return pruneRender(r, opts.format, nil, nil)
 	}
 	if !opts.force {
 		confirmed, err := r.confirmPrune(len(stopped))
@@ -72,8 +90,11 @@ func (r *Runner) prune(ctx context.Context, args []string) int {
 			return 0
 		}
 	}
-	operations, failures := r.deletePrunedSandboxes(ctx, client, stopped)
-	if code := pruneRender(r, opts.format, operations, nil); code != 0 {
+	removed, operations, failures := r.deletePrunedSandboxes(ctx, client, stopped)
+	if opts.format == listFormatTable {
+		_, _ = fmt.Fprintf(r.Out, "Removed %d stopped sandboxes:\n", len(removed))
+		printPruneTable(r.Out, removed)
+	} else if code := pruneRender(r, opts.format, operations, nil); code != 0 {
 		return code
 	}
 	if failures != nil {
@@ -96,7 +117,7 @@ func parsePruneOptions(args []string) (pruneOptions, bool, error) {
 		if errors.Is(err, flag.ErrHelp) {
 			return pruneOptions{}, true, nil
 		}
-		return pruneOptions{}, false, err
+		return pruneOptions{}, false, flagParseError{err: err}
 	}
 	if fs.NArg() != 0 {
 		return pruneOptions{}, false, errors.New("usage: ksbx prune [--dry-run] [-f|--force] [--format table|json|yaml]")
@@ -168,9 +189,10 @@ func parsePruneFilter(value string, now time.Time) (time.Time, bool, error) {
 	return time.Time{}, false, errors.New("prune filter must be an RFC3339 timestamp, Unix seconds, or a non-negative duration")
 }
 
-func (r *Runner) deletePrunedSandboxes(ctx context.Context, client sdk.Client, stopped []sdk.Sandbox) ([]*sdk.Operation, error) {
+func (r *Runner) deletePrunedSandboxes(ctx context.Context, client sdk.Client, stopped []sdk.Sandbox) ([]sdk.Sandbox, []*sdk.Operation, error) {
 	var failures []error
 	operations := make([]*sdk.Operation, 0, len(stopped))
+	removed := make([]sdk.Sandbox, 0, len(stopped))
 	for i := range stopped {
 		op, err := client.Sandboxes().Delete(ctx, stopped[i].ID, sdk.DeleteOptions{Force: true})
 		if err != nil {
@@ -182,17 +204,30 @@ func (r *Runner) deletePrunedSandboxes(ctx context.Context, client sdk.Client, s
 			continue
 		}
 		operations = append(operations, op)
+		removed = append(removed, stopped[i])
 	}
-	return operations, errors.Join(failures...)
+	return removed, operations, errors.Join(failures...)
 }
 
 func printPruneCandidates(out io.Writer, items []sdk.Sandbox) {
+	_, _ = fmt.Fprintf(out, "Would remove %d stopped sandboxes:\n", len(items))
+	printPruneTable(out, items)
+}
+
+func printPruneTable(out io.Writer, items []sdk.Sandbox) {
 	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tNAME\tSTATE")
+	_, _ = fmt.Fprintln(tw, "SANDBOX\tAGENT\tSTOPPED\tWORKSPACE")
 	for i := range items {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", items[i].ID, items[i].Name, items[i].State)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", items[i].Name, formatAgent(items[i].Agent), formatStoppedAge(items[i].StoppedAt), formatWorkspaces(&items[i]))
 	}
 	_ = tw.Flush()
+}
+
+func formatStoppedAge(stopped time.Time) string {
+	if stopped.IsZero() {
+		return "-"
+	}
+	return formatAge(stopped)
 }
 
 func (r *Runner) confirmPrune(count int) (bool, error) {

@@ -189,9 +189,8 @@ func TestRunRejectsUnimplementedAndUnknownAgents(t *testing.T) {
 	}
 }
 
-func TestRunRejectsExtraWorkspacesAndUnknownFlags(t *testing.T) {
+func TestRunRejectsExtraWorkspacesAndInvalidFlags(t *testing.T) {
 	for _, args := range [][]string{
-		{"run", "--bogus", "shell", "."},
 		{"run", "--name", "", "shell", "."},
 		{"run", "-e", "1BAD=x", "shell", "."},
 		{"run", "--rm", "--detach", "shell", "."},
@@ -237,8 +236,68 @@ func TestRunGeneratesUniqueNameForNewSandbox(t *testing.T) {
 	if code := runner.Run(context.Background(), []string{"run", "shell", workspace}); code != 0 {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", code, out.String(), stderr.String())
 	}
-	if sandboxes.createCalls != 1 || !strings.HasPrefix(sandboxes.created.Name, "shell-") || len(sandboxes.created.Name) != len("shell-")+8 {
-		t.Fatalf("unexpected generated name: %q", sandboxes.created.Name)
+	want := "shell-" + sanitizeNameBase(workspace)
+	if sandboxes.createCalls != 1 || sandboxes.created.Name != want {
+		t.Fatalf("unexpected generated name: %q, want %q", sandboxes.created.Name, want)
+	}
+}
+
+func TestRunFallsBackToHexNameWhenDerivedNameTaken(t *testing.T) {
+	workspace := t.TempDir()
+	taken := "shell-" + sanitizeNameBase(workspace)
+	sandboxes := &runSandbox{items: []sdk.Sandbox{{ID: "sb-old", Name: taken, State: sdk.StateRunning, Workspace: workspace}}}
+	sessions := &fakeSessions{}
+	runner, out, stderr := runTestRunner(t, runClient{sandboxes: sandboxes, sessions: sessions}, "")
+	if code := runner.Run(context.Background(), []string{"run", "--new", "shell", workspace}); code != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, out.String(), stderr.String())
+	}
+	if sandboxes.createCalls != 1 {
+		t.Fatalf("create=%d", sandboxes.createCalls)
+	}
+	name := sandboxes.created.Name
+	if name == taken || !strings.HasPrefix(name, "shell-") {
+		t.Fatalf("unexpected fresh name: %q", name)
+	}
+}
+
+func TestRunReusesDerivedSandboxWithoutTerminal(t *testing.T) {
+	workspace := t.TempDir()
+	derived := "shell-" + sanitizeNameBase(workspace)
+	sandboxes := &runSandbox{items: []sdk.Sandbox{{ID: "sb-old", Name: derived, State: sdk.StateRunning, Workspace: workspace}}}
+	sessions := &fakeSessions{}
+	runner, _, stderr := runTestRunner(t, runClient{sandboxes: sandboxes, sessions: sessions}, "")
+	if code := runner.Run(context.Background(), []string{"run", "shell", workspace}); code != 0 || stderr.Len() != 0 {
+		t.Fatalf("exit=%d stderr=%q", code, stderr.String())
+	}
+	if sandboxes.createCalls != 0 {
+		t.Fatalf("create=%d, want reuse", sandboxes.createCalls)
+	}
+	if !sessions.opened || sessions.req.SandboxID != "sb-old" {
+		t.Fatalf("session: %+v", sessions.req)
+	}
+}
+
+func TestRunNewSkipsDerivedReuse(t *testing.T) {
+	workspace := t.TempDir()
+	derived := "shell-" + sanitizeNameBase(workspace)
+	sandboxes := &runSandbox{items: []sdk.Sandbox{{ID: "sb-old", Name: derived, State: sdk.StateRunning, Workspace: workspace}}}
+	sessions := &fakeSessions{}
+	runner, out, stderr := runTestRunner(t, runClient{sandboxes: sandboxes, sessions: sessions}, "")
+	if code := runner.Run(context.Background(), []string{"run", "--new", "shell", workspace}); code != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, out.String(), stderr.String())
+	}
+	if sandboxes.createCalls != 1 || sandboxes.created.Name == derived {
+		t.Fatalf("create=%d name=%q", sandboxes.createCalls, sandboxes.created.Name)
+	}
+}
+
+func TestRunUnknownFlagUsesSharedErrorContract(t *testing.T) {
+	runner, _, stderr := runTestRunner(t, runClient{}, "")
+	if code := runner.Run(context.Background(), []string{"run", "--bogus", "shell", "."}); code != 1 {
+		t.Fatalf("exit=%d", code)
+	}
+	if !strings.Contains(stderr.String(), "error: unknown flag: --bogus") || !strings.Contains(stderr.String(), "  try: ksbx run --help") {
+		t.Fatalf("stderr=%q", stderr.String())
 	}
 }
 

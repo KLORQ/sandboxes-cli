@@ -1,0 +1,7 @@
+apiVersion: klorq.dev/v1alpha1
+kind: Kit
+metadata:
+  name: codex-go
+spec:
+  agent: codex
+  policy_profile: sbx-compat

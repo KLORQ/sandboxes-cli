@@ -57,7 +57,7 @@ func TestDiagnoseReportsDaemonFailure(t *testing.T) {
 	if code := runner.Run(context.Background(), []string{"diagnose"}); code != 1 {
 		t.Fatalf("exit=%d output=%q", code, out.String())
 	}
-	if !strings.Contains(out.String(), "socket:") || !strings.Contains(out.String(), "dial failed") || !strings.Contains(out.String(), "missing") {
+	if !strings.Contains(out.String(), "Socket:") || !strings.Contains(out.String(), "dial failed") || !strings.Contains(out.String(), "(missing)") {
 		t.Fatalf("unexpected output: %q", out.String())
 	}
 }

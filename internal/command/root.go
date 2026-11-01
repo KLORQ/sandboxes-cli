@@ -18,12 +18,21 @@ import (
 
 	sdk "github.com/KLORQ/sandboxes-go-sdk"
 
-	"github.com/KLORQ/sandboxes-cli/internal/version"
+	"github.com/KLORQ/sandboxes-cli/internal/kit"
 )
 
 const (
 	answerShortYes = "y"
 	answerYes      = "yes"
+
+	actionAllow       = "allow"
+	actionDeny        = "deny"
+	commandGet        = "get"
+	commandInspect    = "inspect"
+	commandList       = "list"
+	commandSet        = "set"
+	schemeHTTPS       = "https"
+	reasonDefaultDeny = "default deny"
 )
 
 const createUsage = `usage: ksbx create [AGENT] [PATH...] [--name NAME] [flags]
@@ -38,7 +47,9 @@ Flags:
                               publish a TCP/UDP guest port (repeatable)
   --allow-network CIDR[:PORT] allow egress (repeatable)
   --deny-network CIDR[:PORT]  deny egress (repeatable)
+  -t, --template REF          container image to use for the sandbox
   --image REF                 image override
+  --kit FILE                  apply a local kit definition
   --cpus N                    CPU count for a new sandbox
   --memory SIZE               memory limit (binary units)
   --docker                    run the dedicated Docker profile
@@ -94,7 +105,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 			r.usage()
 			return 0
 		}
-		return 2
+		return r.flagParseFailure("", err)
 	}
 	r.Socket = *socket
 	rest := global.Args()
@@ -111,17 +122,16 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		r.usage()
 		return 0
 	case "version":
-		_, _ = fmt.Fprintln(r.Out, version.Version)
-		return 0
+		return r.version(ctx, rest[1:])
 	case "create":
 		return r.create(ctx, rest[1:])
-	case "ls", "list":
+	case "ls", commandList:
 		return r.list(ctx, rest[1:])
-	case "get":
+	case commandGet:
 		return r.get(ctx, rest[1:])
-	case "start":
+	case startCommand:
 		return r.start(ctx, rest[1:])
-	case "stop":
+	case stopCommand:
 		return r.stop(ctx, rest[1:])
 	case "rm", "delete":
 		return r.remove(ctx, rest[1:])
@@ -134,10 +144,33 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	}
 }
 
+// flagParseFailure normalizes stdlib flag parse errors to the shared CLI
+// error contract: unknown flags exit 1 with a Cobra-style hint, other parse
+// failures exit 2. Callers handle flag.ErrHelp before invoking it.
+func (r *Runner) flagParseFailure(cmdPath string, err error) int {
+	message := err.Error()
+	if name, ok := strings.CutPrefix(message, "flag provided but not defined: -"); ok {
+		_, _ = fmt.Fprintf(r.Err, "error: unknown flag: --%s\n  try: ksbx %s--help\n", name, commandHintPath(cmdPath))
+		return 1
+	}
+	_, _ = fmt.Fprintf(r.Err, "error: %s\n  try: ksbx %s--help\n", message, commandHintPath(cmdPath))
+	return 2
+}
+
+func commandHintPath(cmdPath string) string {
+	if cmdPath == "" {
+		return ""
+	}
+	return cmdPath + " "
+}
+
+//nolint:cyclop // one dispatch switch is the command router.
 func (r *Runner) runAuxiliaryCommand(ctx context.Context, name string, args []string) (int, bool) {
 	switch name {
 	case "run":
 		return r.run(ctx, args), true
+	case "attach":
+		return r.attach(ctx, args), true
 	case "exec":
 		return r.exec(ctx, args), true
 	case "cp":
@@ -146,7 +179,7 @@ func (r *Runner) runAuxiliaryCommand(ctx context.Context, name string, args []st
 		return r.accountLogin(ctx, args), true
 	case "logout":
 		return r.accountLogout(ctx, args), true
-	case "secret", "secrets":
+	case secretCommand, "secrets":
 		return r.secret(ctx, args), true
 	case "prune":
 		return r.prune(ctx, args), true
@@ -154,9 +187,13 @@ func (r *Runner) runAuxiliaryCommand(ctx context.Context, name string, args []st
 		return r.diagnose(ctx, args), true
 	case "ports":
 		return r.ports(ctx, args), true
-	case "policy":
+	case policyCommand:
 		return r.policy(ctx, args), true
-	case "completion":
+	case "settings":
+		return r.settings(args), true
+	case "kit":
+		return r.kit(args), true
+	case completionCommand:
 		return r.completion(args), true
 	default:
 		return 0, false
@@ -172,7 +209,7 @@ func (r *Runner) accountLogin(ctx context.Context, args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		return 2
+		return r.flagParseFailure("login", err)
 	}
 	if fs.NArg() != 0 || (*username == "") != !*passwordStdin {
 		_, _ = fmt.Fprintln(r.Err, "usage: ksbx login [--username USER --password-stdin]")
@@ -246,7 +283,7 @@ func (r *Runner) accountLogout(ctx context.Context, args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		return 2
+		return r.flagParseFailure("logout", err)
 	}
 	if fs.NArg() != 0 {
 		_, _ = fmt.Fprintln(r.Err, "usage: ksbx logout [--force]")
@@ -371,19 +408,68 @@ func (r *Runner) secret(ctx context.Context, args []string) int {
 	}
 	switch args[0] {
 	case helpCommand, helpShort, helpFlag:
-		_, _ = fmt.Fprintln(r.Out, "usage: ksbx secret <set|rm> [flags]")
-		_, _ = fmt.Fprintln(r.Out, "commands: ls, set, rm (registry credentials only)")
+		_, _ = fmt.Fprintln(r.Out, "usage: ksbx secret <set|ls|rm> [flags]")
+		_, _ = fmt.Fprintln(r.Out, "commands: ls, set, rm (service secrets and registry credentials)")
 		return 0
-	case "set":
-		return r.registrySet(ctx, args[1:])
+	case commandSet:
+		if hasFlag(args[1:], "--registry") {
+			return r.registrySet(ctx, args[1:])
+		}
+		return r.serviceSecretSet(ctx, args[1:])
 	case "rm":
-		return r.registryRemove(ctx, args[1:])
+		if hasFlag(args[1:], "--registry") {
+			return r.registryRemove(ctx, args[1:])
+		}
+		return r.serviceSecretRemove(ctx, args[1:])
 	case "ls":
-		return r.registryList(ctx, args[1:])
+		return r.serviceSecretList(ctx, args[1:])
+	case "import":
+		return r.serviceSecretImport(ctx, args[1:])
 	default:
 		_, _ = fmt.Fprintln(r.Err, "unknown secret command")
 		return 2
 	}
+}
+
+// reorderFlagArgs moves flags and their values before positionals so the
+// standard library flag parser accepts the Docker sbx flag-after-argument
+// grammar. It never interprets values as flags.
+func reorderFlagArgs(args []string, valueFlags map[string]bool) []string {
+	flags := make([]string, 0, len(args))
+	positionals := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			positionals = append(positionals, args[i+1:]...)
+			break
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			positionals = append(positionals, arg)
+			continue
+		}
+		flags = append(flags, arg)
+		name, _, hasValue := strings.Cut(arg, "=")
+		if hasValue {
+			continue
+		}
+		if valueFlags[name] && i+1 < len(args) {
+			i++
+			flags = append(flags, args[i])
+		}
+	}
+	return append(flags, positionals...)
+}
+
+func hasFlag(args []string, name string) bool {
+	for _, arg := range args {
+		if arg == name || strings.HasPrefix(arg, name+"=") {
+			return true
+		}
+		if arg == "--" {
+			return false
+		}
+	}
+	return false
 }
 
 func (r *Runner) registryRemove(ctx context.Context, args []string) int {
@@ -396,7 +482,7 @@ func (r *Runner) registryRemove(ctx context.Context, args []string) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		return 2
+		return r.flagParseFailure("secret rm", err)
 	}
 	if fs.NArg() != 0 || *registry == "" || *allSandboxes && *sandboxName != "" {
 		_, _ = fmt.Fprintln(r.Err, "usage: ksbx secret rm [--registry HOST] [--all-sandboxes | --sandbox NAME]")
@@ -437,8 +523,8 @@ func (r *Runner) registrySet(ctx context.Context, args []string) int {
 	passwordStdin := fs.Bool("password-stdin", false, "read password from stdin")
 	allSandboxes := fs.Bool("all-sandboxes", false, "allow future brokered use in all sandboxes")
 	sandboxName := fs.String("sandbox", "", "allow future brokered use in one sandbox")
-	if err := fs.Parse(args); err != nil {
-		return flagErrorCode(err)
+	if code, done := r.parseFlagsOrFail("secret set", fs, args); done {
+		return code
 	}
 	if !validRegistryArguments(fs.NArg(), *registry) {
 		_, _ = fmt.Fprintln(r.Err, "usage: ksbx secret set [--registry HOST] --username USER [--password-stdin] [--all-sandboxes | --sandbox NAME]")
@@ -494,11 +580,28 @@ func (r *Runner) registrySet(ctx context.Context, args []string) int {
 	return 0
 }
 
-func flagErrorCode(err error) int {
-	if errors.Is(err, flag.ErrHelp) {
-		return 0
+type flagParseError struct{ err error }
+
+func (e flagParseError) Error() string { return e.err.Error() }
+
+func asFlagParseError(err error) (flagParseError, bool) {
+	var parseErr flagParseError
+	if errors.As(err, &parseErr) {
+		return parseErr, true
 	}
-	return 2
+	return flagParseError{}, false
+}
+
+// parseFlagsOrFail parses a flag set and reports failures through the shared
+// error contract, returning done=true when the caller should return code.
+func (r *Runner) parseFlagsOrFail(cmdPath string, fs *flag.FlagSet, args []string) (code int, done bool) {
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0, true
+		}
+		return r.flagParseFailure(cmdPath, err), true
+	}
+	return 0, false
 }
 
 func validRegistryArguments(count int, registry string) bool {
@@ -563,6 +666,9 @@ func (r *Runner) create(ctx context.Context, args []string) int {
 		_, _ = fmt.Fprint(r.Out, createUsage)
 		return 0
 	}
+	if parseErr, ok := asFlagParseError(err); ok {
+		return r.flagParseFailure("create", parseErr.err)
+	}
 	if err != nil {
 		r.error(err)
 		return 2
@@ -575,7 +681,11 @@ func (r *Runner) create(ctx context.Context, args []string) int {
 	defer func() { _ = client.Close() }()
 	name := opts.name
 	if name == "" {
-		name, err = runSandboxName(ctx, client, "", opts.agent)
+		base := ""
+		if len(opts.workspaces) > 0 {
+			base = sanitizeNameBase(opts.workspaces[0].Path)
+		}
+		name, err = runSandboxName(ctx, client, "", opts.agent, base)
 		if err != nil {
 			r.error(err)
 			return 1
@@ -601,8 +711,68 @@ func (r *Runner) create(ctx context.Context, args []string) int {
 		r.error(err)
 		return 1
 	}
-	r.printOperation(op)
+	r.printCreatedSandbox(ctx, client, name, op)
 	return 0
+}
+
+// printCreatedSandbox renders the human create summary; operation records stay
+// available through --format json on lifecycle commands.
+func (r *Runner) printCreatedSandbox(ctx context.Context, client sdk.Client, name string, op *sdk.Operation) {
+	id := ""
+	if op != nil {
+		id = op.SandboxID
+	}
+	sb, err := lookupSandboxForReport(ctx, client, id, name)
+	if err != nil || sb == nil {
+		_, _ = fmt.Fprintf(r.Out, "Created sandbox %s\n", name)
+		return
+	}
+	_, _ = fmt.Fprint(r.Out, sandboxReport(sb))
+	_, _ = fmt.Fprintf(r.Out, "Created sandbox %s\n", sb.Name)
+}
+
+// lookupSandboxForReport resolves a sandbox by ID first and falls back to name.
+func lookupSandboxForReport(ctx context.Context, client sdk.Client, id, name string) (*sdk.Sandbox, error) {
+	if id != "" {
+		sb, err := client.Sandboxes().Get(ctx, id)
+		if err == nil {
+			return sb, nil
+		}
+	}
+	sb, found, err := lookupSandboxByName(ctx, client, name)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("sandbox %q not found", name)
+	}
+	return sb, nil
+}
+
+// sandboxReport formats a created sandbox like the Docker sbx baseline.
+func sandboxReport(sb *sdk.Sandbox) string {
+	agent := formatAgent(sb.Agent)
+	return fmt.Sprintf(`
+SANDBOX
+  Name:       %s
+  Agent:      %s
+  Workspace:  %s
+  Image:      %s
+  CPU:        %d
+  Memory:     %s
+
+`, sb.Name, agent, formatWorkspaces(sb), sb.Image, sb.CPUs, formatMemoryMiB(sb.MemoryMiB))
+}
+
+// formatMemoryMiB renders memory sizes like the Docker sbx baseline.
+func formatMemoryMiB(mib uint32) string {
+	if mib == 0 {
+		return "-"
+	}
+	if mib%1024 == 0 {
+		return fmt.Sprintf("%d GiB", mib/1024)
+	}
+	return fmt.Sprintf("%d MiB", mib)
 }
 
 func parseCreatePositionals(positionals []string, nameFlag string) (string, string, []string, error) {
@@ -630,10 +800,43 @@ func parseCreatePositionals(positionals []string, nameFlag string) (string, stri
 	return name, agent, paths, nil
 }
 
+// resolveTemplateImage applies the Docker sbx baseline --template alias.
+func resolveTemplateImage(image, template string) (string, error) {
+	if template == "" {
+		return image, nil
+	}
+	if image != "" {
+		return "", errors.New("--template and --image cannot be combined")
+	}
+	return template, nil
+}
+
+func validateCreateResources(cpus uint, memory string) (uint32, uint32, error) {
+	cpuCount, err := validateCPUs(cpus)
+	if err != nil {
+		return 0, 0, err
+	}
+	memoryMiB, err := parseMemoryMiB(memory)
+	if err != nil {
+		return 0, 0, err
+	}
+	return cpuCount, memoryMiB, nil
+}
+
+func resolveCreateWorkspaces(workspaceFlags stringListFlag, paths []string) ([]sdk.Workspace, error) {
+	combined := make(stringListFlag, 0, len(workspaceFlags)+len(paths))
+	combined = append(combined, workspaceFlags...)
+	combined = append(combined, paths...)
+	return resolveWorkspaces(combined, false)
+}
+
+//nolint:gocyclo,cyclop,funlen // create accepts the full documented flag matrix.
 func parseCreateOptions(args []string) (createOptions, bool, error) {
 	fs := flag.NewFlagSet("create", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	image := fs.String("image", "", "image reference")
+	template := fs.String("template", "", "container image to use for the sandbox (alias for --image)")
+	fs.StringVar(template, "t", "", "container image to use for the sandbox (alias for --image)")
 	nameFlag := fs.String("name", "", "sandbox name")
 	var workspaceFlags stringListFlag
 	fs.Var(&workspaceFlags, "workspace", "host workspace path, optionally suffixed with :ro (repeatable)")
@@ -652,29 +855,45 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	memory := fs.String("memory", "", "memory limit such as 512m or 2g (empty selects the daemon default)")
 	profile := fs.String("policy-profile", "", "egress profile: deny-all, balanced or sbx-compat")
 	privileged := fs.Bool("docker", false, "run the dedicated Docker profile")
+	kitPath := fs.String("kit", "", "apply a local kit definition")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return createOptions{}, true, nil
 		}
-		return createOptions{}, false, err
+		return createOptions{}, false, flagParseError{err: err}
 	}
-	name, agent, paths, err := parseCreatePositionals(fs.Args(), *nameFlag)
+	positionals := fs.Args()
+	if *kitPath != "" && len(positionals) == 0 {
+		doc, err := kit.Load(*kitPath)
+		if err != nil {
+			return createOptions{}, false, err
+		}
+		if doc.Spec.Agent == "" {
+			return createOptions{}, false, fmt.Errorf("kit %s does not define an agent", *kitPath)
+		}
+		positionals = []string{doc.Spec.Agent}
+	}
+	name, agent, paths, err := parseCreatePositionals(positionals, *nameFlag)
 	if err != nil {
 		return createOptions{}, false, err
 	}
-	applyAgentDefaults(agent, image, privileged)
-	cpuCount, err := validateCPUs(*cpus)
+	imageRef, err := resolveTemplateImage(*image, *template)
 	if err != nil {
 		return createOptions{}, false, err
 	}
-	memoryMiB, err := parseMemoryMiB(*memory)
+	if *kitPath != "" {
+		kitPaths := []string(workspaceFlags)
+		if err := applyKit(*kitPath, &agent, &imageRef, profile, &kitPaths); err != nil {
+			return createOptions{}, false, err
+		}
+		workspaceFlags = kitPaths
+	}
+	applyAgentDefaults(agent, &imageRef, privileged)
+	cpuCount, memoryMiB, err := validateCreateResources(*cpus, *memory)
 	if err != nil {
 		return createOptions{}, false, err
 	}
-	combinedWorkspaces := make(stringListFlag, 0, len(workspaceFlags)+len(paths))
-	combinedWorkspaces = append(combinedWorkspaces, workspaceFlags...)
-	combinedWorkspaces = append(combinedWorkspaces, paths...)
-	workspaces, err := resolveWorkspaces(combinedWorkspaces, false)
+	workspaces, err := resolveCreateWorkspaces(workspaceFlags, paths)
 	if err != nil {
 		return createOptions{}, false, err
 	}
@@ -682,13 +901,16 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	if err != nil {
 		return createOptions{}, false, err
 	}
-	workspace := firstWorkspacePath(workspaces)
 	ports, allow, deny, err := resolveCreateNetwork(publishFlags, allowFlags, denyFlags)
 	if err != nil {
 		return createOptions{}, false, err
 	}
+	workspace := ""
+	if len(workspaces) > 0 {
+		workspace = workspaces[0].Path
+	}
 	return createOptions{
-		name: name, agent: agent, image: *image, workspace: workspace, idempotencyKey: *idempotency,
+		name: name, agent: agent, image: imageRef, workspace: workspace, idempotencyKey: *idempotency,
 		workspaces: workspaces, ports: ports, allow: allow, deny: deny,
 		cpus: cpuCount, memoryMiB: memoryMiB, env: env, profile: *profile, privileged: *privileged,
 	}, false, nil
@@ -750,41 +972,64 @@ func (r *Runner) remove(ctx context.Context, args []string) int {
 		return 1
 	}
 	defer func() { _ = client.Close() }()
-	targets := opts.targets
-	if opts.all {
-		targets, err = allSandboxIDs(ctx, client)
-		if err != nil {
-			r.error(err)
-			return 1
-		}
+	targets, code := r.prepareRemoval(ctx, client, opts)
+	if code >= 0 {
+		return code
 	}
-	if len(targets) == 0 {
-		if err := renderOperations(r.Out, opts.format, nil); err != nil {
-			r.error(err)
-			return 1
-		}
-		return 0
-	}
-	if !opts.force {
-		confirmed, err := r.confirmRemoval(len(targets))
-		if err != nil {
-			r.error(err)
-			return 1
-		}
-		if !confirmed {
-			_, _ = fmt.Fprintln(r.Out, "Removal canceled")
-			return 0
-		}
-	}
-	operations, failed := r.deleteSandboxes(ctx, client, targets)
-	if err := renderOperations(r.Out, opts.format, operations); err != nil {
-		r.error(err)
-		return 1
+	operations, removed, failed := r.deleteSandboxes(ctx, client, targets)
+	if code := r.renderRemoval(opts.format, operations, removed); code >= 0 {
+		return code
 	}
 	if failed {
 		return 1
 	}
 	return 0
+}
+
+func (r *Runner) prepareRemoval(ctx context.Context, client sdk.Client, opts removeOptions) ([]string, int) {
+	targets := opts.targets
+	if opts.all {
+		var err error
+		targets, err = allSandboxIDs(ctx, client)
+		if err != nil {
+			r.error(err)
+			return nil, 1
+		}
+	}
+	if len(targets) == 0 {
+		if err := renderOperations(r.Out, opts.format, nil); err != nil {
+			r.error(err)
+			return nil, 1
+		}
+		return nil, 0
+	}
+	if opts.force {
+		return targets, -1
+	}
+	confirmed, err := r.confirmRemoval(len(targets))
+	if err != nil {
+		r.error(err)
+		return nil, 1
+	}
+	if !confirmed {
+		_, _ = fmt.Fprintln(r.Out, "Removal canceled")
+		return nil, 0
+	}
+	return targets, -1
+}
+
+func (r *Runner) renderRemoval(format string, operations []*sdk.Operation, removed []string) int {
+	if format != listFormatTable {
+		if err := renderOperations(r.Out, format, operations); err != nil {
+			r.error(err)
+			return 1
+		}
+		return -1
+	}
+	for _, name := range removed {
+		_, _ = fmt.Fprintf(r.Out, "Removed sandbox %s\n", name)
+	}
+	return -1
 }
 
 func parseRemoveOptions(args []string) (removeOptions, bool, error) {
@@ -823,9 +1068,10 @@ func allSandboxIDs(ctx context.Context, client sdk.Client) ([]string, error) {
 	return ids, nil
 }
 
-func (r *Runner) deleteSandboxes(ctx context.Context, client sdk.Client, targets []string) ([]*sdk.Operation, bool) {
+func (r *Runner) deleteSandboxes(ctx context.Context, client sdk.Client, targets []string) ([]*sdk.Operation, []string, bool) {
 	failed := false
 	operations := make([]*sdk.Operation, 0, len(targets))
+	removed := make([]string, 0, len(targets))
 	for _, name := range targets {
 		id, err := findExecSandbox(ctx, client, name)
 		if err != nil {
@@ -845,8 +1091,9 @@ func (r *Runner) deleteSandboxes(ctx context.Context, client sdk.Client, targets
 			continue
 		}
 		operations = append(operations, op)
+		removed = append(removed, name)
 	}
-	return operations, failed
+	return operations, removed, failed
 }
 
 func (r *Runner) confirmRemoval(count int) (bool, error) {
@@ -898,7 +1145,7 @@ func (r *Runner) lifecycle(ctx context.Context, name string, args []string) int 
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		return 2
+		return r.flagParseFailure(name, err)
 	}
 	if fs.NArg() < 1 {
 		_, _ = fmt.Fprintf(r.Err, "usage: ksbx %s [--format table|json|yaml] [--json] [flags] SANDBOX...\n", name)
@@ -918,38 +1165,59 @@ func (r *Runner) lifecycle(ctx context.Context, name string, args []string) int 
 	failed := false
 	var operations []*sdk.Operation
 	for _, target := range fs.Args() {
-		id, err := findExecSandbox(ctx, client, target)
+		op, err := r.runLifecycleTarget(ctx, client, name, target, *grace)
 		if err != nil {
 			r.error(err)
-			failed = true
-			continue
-		}
-		var op *sdk.Operation
-		if name == "start" {
-			op, err = client.Sandboxes().Start(ctx, id)
-		} else {
-			op, err = client.Sandboxes().Stop(ctx, id, sdk.StopOptions{Grace: *grace})
-		}
-		if err != nil {
-			r.error(err)
-			failed = true
-			continue
-		}
-		if op != nil && op.State == sdk.StateFailed {
-			r.error(fmt.Errorf("%s sandbox %s failed: %s", name, target, op.Error))
 			failed = true
 			continue
 		}
 		operations = append(operations, op)
+		if selected == listFormatTable {
+			_, _ = fmt.Fprintf(r.Out, "%s sandbox %s\n", lifecyclePastTense(name), target)
+		}
 	}
-	if err := renderOperations(r.Out, selected, operations); err != nil {
-		r.error(err)
-		return 1
+	if selected != listFormatTable {
+		if err := renderOperations(r.Out, selected, operations); err != nil {
+			r.error(err)
+			return 1
+		}
 	}
 	if failed {
 		return 1
 	}
 	return 0
+}
+
+// runLifecycleTarget starts or stops one sandbox and returns its operation.
+func (r *Runner) runLifecycleTarget(ctx context.Context, client sdk.Client, name, target string, grace time.Duration) (*sdk.Operation, error) {
+	id, err := findExecSandbox(ctx, client, target)
+	if err != nil {
+		return nil, err
+	}
+	var op *sdk.Operation
+	if name == startCommand {
+		op, err = client.Sandboxes().Start(ctx, id)
+	} else {
+		op, err = client.Sandboxes().Stop(ctx, id, sdk.StopOptions{Grace: grace})
+	}
+	if err != nil {
+		return nil, err
+	}
+	if op != nil && op.State == sdk.StateFailed {
+		return nil, fmt.Errorf("%s sandbox %s failed: %s", name, target, op.Error)
+	}
+	return op, nil
+}
+
+func lifecyclePastTense(name string) string {
+	switch name {
+	case stopCommand:
+		return "Stopped"
+	case startCommand:
+		return "Started"
+	default:
+		return name + "ed"
+	}
 }
 
 func (r *Runner) client() (sdk.Client, error) {
@@ -979,7 +1247,7 @@ func (r *Runner) printSandbox(sb *sdk.Sandbox) {
 
 func (r *Runner) usage() {
 	_, _ = fmt.Fprintln(r.Out, "usage: ksbx [--socket PATH] <command>")
-	_, _ = fmt.Fprintln(r.Out, "commands: run, create, exec, cp, ls, get, ports, policy, start, stop, rm, prune, diagnose, wait, login, logout, secret, completion, version, help")
+	_, _ = fmt.Fprintln(r.Out, "commands: run, attach, create, exec, cp, ls, get, ports, policy, settings, start, stop, rm, prune, diagnose, wait, login, logout, secret, completion, version, help")
 	_, _ = fmt.Fprintln(r.Out, "global flags: --socket PATH  daemon unix socket")
 	_, _ = fmt.Fprintln(r.Out, `Use "ksbx <command> --help" for command details.`)
 }
@@ -1054,11 +1322,4 @@ func resolveCreateNetwork(publish, allow, deny []string) ([]sdk.Port, []sdk.Netw
 		return nil, nil, nil, err
 	}
 	return ports, allowRules, denyRules, nil
-}
-
-func firstWorkspacePath(workspaces []sdk.Workspace) string {
-	if len(workspaces) == 0 {
-		return ""
-	}
-	return workspaces[0].Path
 }

@@ -18,7 +18,9 @@ func TestParseNetworkRule(t *testing.T) {
 		{"udp:10.0.0.0/8:53", sdk.NetworkRule{Protocol: "udp", CIDR: "10.0.0.0/8", Port: 53}, true},
 		{"0.0.0.0/0", sdk.NetworkRule{Protocol: "tcp", CIDR: "0.0.0.0/0"}, true},
 		{"2001:db8::/32", sdk.NetworkRule{}, false},
-		{"domain.example:443", sdk.NetworkRule{}, false},
+		{"domain.example:443", sdk.NetworkRule{Protocol: "tcp", Domain: "domain.example", Port: 443}, true},
+		{"*.example.com:443", sdk.NetworkRule{Protocol: "tcp", Domain: "*.example.com", Port: 443}, true},
+		{"**", sdk.NetworkRule{Protocol: "tcp", CIDR: "0.0.0.0/0"}, true},
 		{"10.0.0.0/8:99999", sdk.NetworkRule{}, false},
 	} {
 		rule, err := parseNetworkRule(tc.value)
