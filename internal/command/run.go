@@ -40,6 +40,8 @@ Flags:
                     deny egress CIDR rule (repeatable; optional udp: prefix)
       --policy-profile deny-all|balanced|sbx-compat
                     opt-in egress profile (default deny-all)
+      --docker      run the dedicated Docker profile (privileged cgroup/network caps)
+      --privileged  alias for --docker
       --cpus N      CPUs for a new sandbox (0 selects the daemon default)
   -m, --memory SIZE memory limit for a new sandbox such as 512m or 2g
   -e, --env KEY=VALUE
@@ -61,6 +63,8 @@ Flags:
 	imageFlag         = "--image"
 	publishFlag       = "--publish"
 	policyProfileFlag = "--policy-profile"
+	privilegedFlag    = "--privileged"
+	dockerFlag        = "--docker"
 	allowFlag         = "--allow-network"
 	denyFlag          = "--deny-network"
 	cpusFlag          = "--cpus"
@@ -85,19 +89,20 @@ type runResources struct {
 }
 
 type runOptions struct {
-	name     string
-	image    string
-	publish  []string
-	allow    []string
-	deny     []string
-	profile  string
-	cpus     uint
-	memory   string
-	env      []string
-	envFiles []string
-	detach   bool
-	remove   bool
-	help     bool
+	name       string
+	image      string
+	publish    []string
+	allow      []string
+	deny       []string
+	profile    string
+	privileged bool
+	cpus       uint
+	memory     string
+	env        []string
+	envFiles   []string
+	detach     bool
+	remove     bool
+	help       bool
 }
 
 // run creates or reuses a sandbox, starts it, and attaches an agent session.
@@ -549,6 +554,7 @@ func (r *Runner) createRunSandbox(ctx context.Context, client sdk.Client, opts r
 		CPUs:          resources.cpus,
 		MemoryMiB:     resources.memory,
 		PolicyProfile: resources.profile,
+		Privileged:    opts.privileged,
 		Env:           envMap(resources.env),
 	})
 	if err != nil {
