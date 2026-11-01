@@ -49,6 +49,14 @@ func parseNetworkRule(value string) (sdk.NetworkRule, error) {
 		}
 		return sdk.NetworkRule{Protocol: protocol, CIDR: target, Port: port}, nil
 	}
+	// A bare IP literal must become a /32 CIDR. Storing it as a domain rule
+	// would silently never match an IP flow (including a deny).
+	if ip := net.ParseIP(target); ip != nil {
+		if ip.To4() == nil {
+			return sdk.NetworkRule{}, errors.New("IPv6 network rules are not supported")
+		}
+		return sdk.NetworkRule{Protocol: protocol, CIDR: ip.String() + "/32", Port: port}, nil
+	}
 	if target == "**" {
 		return sdk.NetworkRule{Protocol: protocol, CIDR: "0.0.0.0/0", Port: port}, nil
 	}
@@ -58,34 +66,37 @@ func parseNetworkRule(value string) (sdk.NetworkRule, error) {
 	return sdk.NetworkRule{Protocol: protocol, Domain: strings.ToLower(target), Port: port}, nil
 }
 
-//nolint:gocyclo,cyclop // one compact grammar validator is clearer than a dispatch table.
 func validateCLIDomain(target string) error {
 	if target == "" || len(target) > 253 || strings.ContainsAny(target, "\\ ") {
 		return errors.New("network rule must be an IPv4 CIDR or a domain")
 	}
-	base := target
-	switch {
-	case strings.HasPrefix(base, "**."):
-		base = strings.TrimPrefix(base, "**.")
-	case strings.HasPrefix(base, "*."):
-		base = strings.TrimPrefix(base, "*.")
+	if net.ParseIP(target) != nil {
+		return errors.New("network rule domain must not be an IP literal; use a CIDR")
 	}
+	base := strings.TrimPrefix(strings.TrimPrefix(target, "**."), "*.")
 	if base == "" || strings.Contains(base, "*") || strings.Contains(base, "://") {
 		return errors.New("invalid domain rule")
 	}
 	for _, label := range strings.Split(base, ".") {
-		if label == "" || len(label) > 63 {
-			return errors.New("invalid domain rule")
-		}
-		for _, r := range label {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
-				r == '-' || r == '?' || r == '[' || r == ']' || r == '!' {
-				continue
-			}
+		if !validCLIDomainLabel(label) {
 			return errors.New("invalid domain rule")
 		}
 	}
 	return nil
+}
+
+func validCLIDomainLabel(label string) bool {
+	if label == "" || len(label) > 63 {
+		return false
+	}
+	for _, r := range label {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+			r == '-' || r == '?' || r == '[' || r == ']' || r == '!' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func resolveNetworkRules(values []string) ([]sdk.NetworkRule, error) {
