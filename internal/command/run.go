@@ -769,7 +769,7 @@ func (r *Runner) createRunSandbox(ctx context.Context, client sdk.Client, opts r
 		MemoryMiB:     resources.memory,
 		PolicyProfile: resources.profile,
 		Privileged:    opts.privileged,
-		Env:           envMap(resources.env),
+		Env:           envMap(withoutSecretRefs(resources.env)),
 	})
 	if err != nil {
 		return r.recoverRunCreate(ctx, client, opts, err)
