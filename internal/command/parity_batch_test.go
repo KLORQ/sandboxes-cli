@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/KLORQ/sandboxes-cli/internal/version"
+
 	sdk "github.com/KLORQ/sandboxes-go-sdk"
 )
 
@@ -237,7 +239,7 @@ func TestVersionCommandText(t *testing.T) {
 	if code := runner.Run(context.Background(), []string{"version"}); code != 0 {
 		t.Fatalf("exit=%d", code)
 	}
-	if !strings.Contains(out.String(), "ksbx version v0.0.9") {
+	if !strings.Contains(out.String(), "ksbx version v"+version.Version) {
 		t.Fatalf("output=%q", out.String())
 	}
 }

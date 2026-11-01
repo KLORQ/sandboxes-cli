@@ -32,13 +32,15 @@ shell agent is implemented. Omit PATH for no workspace mount.
 Flags:
   --name NAME                 sandbox name
   --workspace PATH[:ro]       additional workspace (repeatable)
-  -p, --publish HOST:GUEST[/tcp|udp]  publish a TCP/UDP guest port (repeatable)
+  -p, --publish [[HOST_IP:]HOST_PORT:]GUEST[/tcp|udp|tcp4|udp4|tcp6|udp6]
+                              publish a TCP/UDP guest port (repeatable)
   --allow-network CIDR[:PORT] allow egress (repeatable)
   --deny-network CIDR[:PORT]  deny egress (repeatable)
   -t, --template REF          container image to use for the sandbox
   --image REF                 image override
   --cpus N                    CPU count for a new sandbox
   --memory SIZE               memory limit (binary units)
+  --docker                    run the dedicated Docker profile
   --idempotency-key KEY       idempotency key
   -e, --env KEY=VALUE         environment for every process (repeatable)
   --env-file FILE             read environment overrides from a file (repeatable)
@@ -586,6 +588,8 @@ type createOptions struct {
 	cpus           uint32
 	memoryMiB      uint32
 	env            []string
+	profile        string
+	privileged     bool
 }
 
 func (r *Runner) create(ctx context.Context, args []string) int {
@@ -631,6 +635,8 @@ func (r *Runner) create(ctx context.Context, args []string) int {
 		Agent:          opts.agent,
 		CPUs:           opts.cpus,
 		MemoryMiB:      opts.memoryMiB,
+		PolicyProfile:  opts.profile,
+		Privileged:     opts.privileged,
 		Env:            envMap(opts.env),
 	})
 	if err != nil {
@@ -766,8 +772,8 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	var workspaceFlags stringListFlag
 	fs.Var(&workspaceFlags, "workspace", "host workspace path, optionally suffixed with :ro (repeatable)")
 	var publishFlags stringListFlag
-	fs.Var(&publishFlags, "publish", "publish HOST:GUEST[/tcp|udp] (repeatable)")
-	fs.Var(&publishFlags, "p", "publish HOST:GUEST[/tcp|udp] (repeatable; alias for --publish)")
+	fs.Var(&publishFlags, "publish", "publish [[HOST_IP:]HOST_PORT:]GUEST[/tcp|udp|tcp4|udp4|tcp6|udp6] (repeatable)")
+	fs.Var(&publishFlags, "p", "publish [[HOST_IP:]HOST_PORT:]GUEST[/tcp|udp|tcp4|udp4|tcp6|udp6] (repeatable; alias for --publish)")
 	var allowFlags, denyFlags stringListFlag
 	fs.Var(&allowFlags, "allow-network", "allow egress CIDR[:PORT] (repeatable; optional udp: prefix)")
 	fs.Var(&denyFlags, "deny-network", "deny egress CIDR[:PORT] (repeatable; optional udp: prefix)")
@@ -778,6 +784,8 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	idempotency := fs.String("idempotency-key", "", "idempotency key")
 	cpus := fs.Uint("cpus", 0, "CPUs (0 selects the daemon default)")
 	memory := fs.String("memory", "", "memory limit such as 512m or 2g (empty selects the daemon default)")
+	profile := fs.String("policy-profile", "", "egress profile: deny-all, balanced or sbx-compat")
+	privileged := fs.Bool("docker", false, "run the dedicated Docker profile")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return createOptions{}, true, nil
@@ -792,6 +800,7 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	if err != nil {
 		return createOptions{}, false, err
 	}
+	applyAgentDefaults(agent, &imageRef, privileged)
 	cpuCount, memoryMiB, err := validateCreateResources(*cpus, *memory)
 	if err != nil {
 		return createOptions{}, false, err
@@ -815,7 +824,7 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	return createOptions{
 		name: name, agent: agent, image: imageRef, workspace: workspace, idempotencyKey: *idempotency,
 		workspaces: workspaces, ports: ports, allow: allow, deny: deny,
-		cpus: cpuCount, memoryMiB: memoryMiB, env: env,
+		cpus: cpuCount, memoryMiB: memoryMiB, env: env, profile: *profile, privileged: *privileged,
 	}, false, nil
 }
 
@@ -1126,8 +1135,8 @@ func (r *Runner) printSandbox(sb *sdk.Sandbox) {
 		_, _ = fmt.Fprintln(r.Out, "not found")
 		return
 	}
-	_, _ = fmt.Fprintf(r.Out, "id: %s\nname: %s\nstate: %s\nagent: %s\ndetached: %t\nlast_used_at: %s\nimage: %s\nworkspace: %s\nworkspaces: %s\nports: %s\nallow: %s\ndeny: %s\ncpus: %d\nmemory_mib: %d\nstopped_at: %s\ngeneration: %d\ncreated: %s\n",
-		sb.ID, sb.Name, sb.State, formatAgent(sb.Agent), sb.Detached, formatTime(sb.LastUsedAt), sb.Image, sb.Workspace, formatWorkspaces(sb), formatPorts(sb), formatRules(sb.Allow), formatRules(sb.Deny),
+	_, _ = fmt.Fprintf(r.Out, "id: %s\nname: %s\nstate: %s\nagent: %s\npolicy_profile: %s\ndetached: %t\nlast_used_at: %s\nimage: %s\nworkspace: %s\nworkspaces: %s\nports: %s\nallow: %s\ndeny: %s\ncpus: %d\nmemory_mib: %d\nstopped_at: %s\ngeneration: %d\ncreated: %s\n",
+		sb.ID, sb.Name, sb.State, formatAgent(sb.Agent), sb.PolicyProfile, sb.Detached, formatTime(sb.LastUsedAt), sb.Image, sb.Workspace, formatWorkspaces(sb), formatPorts(sb), formatRules(sb.Allow), formatRules(sb.Deny),
 		sb.CPUs, sb.MemoryMiB, formatTime(sb.StoppedAt), sb.Generation, formatTime(sb.CreatedAt))
 }
 
@@ -1208,4 +1217,11 @@ func resolveCreateNetwork(publish, allow, deny []string) ([]sdk.Port, []sdk.Netw
 		return nil, nil, nil, err
 	}
 	return ports, allowRules, denyRules, nil
+}
+
+func firstWorkspacePath(workspaces []sdk.Workspace) string {
+	if len(workspaces) == 0 {
+		return ""
+	}
+	return workspaces[0].Path
 }

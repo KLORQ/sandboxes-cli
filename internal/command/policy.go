@@ -43,7 +43,11 @@ func (r *Runner) policy(ctx context.Context, args []string) int {
 			return r.policyMutateNetwork(ctx, args[0], args[2:])
 		}
 		return r.policyMutate(ctx, args[0], args[1:])
-	case "reset", "init", "refresh", "log", "approval", "profile":
+	case "init":
+		return r.policyInit(ctx, args[1:])
+	case "profile":
+		return r.policyProfile(ctx, args[1:])
+	case "reset", "refresh", "log", "approval":
 		_, _ = fmt.Fprintf(r.Err, "ksbx policy %s: this policy operation is not implemented\n", args[0])
 		return 1
 	case helpCommand, helpShort, helpFlag:
@@ -254,6 +258,51 @@ func (r *Runner) policyList(ctx context.Context, args []string) int {
 	return 0
 }
 
+func (r *Runner) policyInit(ctx context.Context, args []string) int {
+	if len(args) != 1 {
+		_, _ = fmt.Fprintln(r.Err, "usage: ksbx policy init allow-all|balanced|deny-all")
+		return 2
+	}
+	profile := args[0]
+	if profile != "allow-all" && profile != "balanced" && profile != "deny-all" {
+		_, _ = fmt.Fprintln(r.Err, "profile must be allow-all, balanced or deny-all")
+		return 2
+	}
+	client, err := r.client()
+	if err != nil {
+		r.error(err)
+		return 1
+	}
+	defer func() { _ = client.Close() }()
+	applied, err := sdk.Policies(client).SetPolicyProfile(ctx, profile)
+	if err != nil {
+		r.error(err)
+		return 1
+	}
+	_, _ = fmt.Fprintf(r.Out, "global policy profile: %s\n", applied)
+	return 0
+}
+
+func (r *Runner) policyProfile(ctx context.Context, args []string) int {
+	if len(args) > 1 || (len(args) == 1 && args[0] != "ls" && args[0] != "list") {
+		_, _ = fmt.Fprintln(r.Err, "usage: ksbx policy profile [ls]")
+		return 2
+	}
+	client, err := r.client()
+	if err != nil {
+		r.error(err)
+		return 1
+	}
+	defer func() { _ = client.Close() }()
+	profile, err := sdk.Policies(client).GetPolicyProfile(ctx)
+	if err != nil {
+		r.error(err)
+		return 1
+	}
+	_, _ = fmt.Fprintf(r.Out, "global: %s\navailable: deny-all, balanced, allow-all\n", profile)
+	return 0
+}
+
 func (r *Runner) policyMutate(ctx context.Context, action string, args []string) int {
 	if len(args) != 2 {
 		_, _ = fmt.Fprintf(r.Err, "usage: ksbx policy %s SANDBOX CIDR[:PORT]\n", action)
@@ -418,15 +467,19 @@ func evaluatePolicy(allow, deny []sdk.NetworkRule, protocol string, ip net.IP, p
 const policyUsage = `Usage: ksbx policy COMMAND
 
 Commands:
-  ls SANDBOX [--format table|json|yaml]       list stored allow/deny rules
-  inspect SANDBOX                             alias for ls
-  allow|deny|rm SANDBOX CIDR[:PORT]           change per-sandbox rules
-  allow|deny|rm network --sandbox NAME CIDR[:PORT]
-                                              Docker sbx grammar for per-sandbox rules
-  check SANDBOX IP PORT [PROTOCOL]            evaluate a request against stored rules
-  check network [--sandbox NAME] TARGET       Docker sbx grammar; TARGET is
-                                              IPv4[:PORT], IPv6[:PORT], or http(s)://URL
+  ls SANDBOX [--format table|json|yaml]   list stored allow/deny rules
+  inspect SANDBOX                         alias for ls
+  allow SANDBOX CIDR[:PORT]               add an allow rule (legacy local grammar)
+  deny SANDBOX CIDR[:PORT]                add a deny rule (legacy local grammar)
+  rm SANDBOX CIDR[:PORT]                  remove an allow or deny rule
+  allow|deny|rm network [--sandbox NAME] RESOURCES
+                                          Docker sbx grammar; --sandbox is required
+                                          until global rules are implemented
+  check SANDBOX IP PORT [PROTOCOL]        evaluate a request against stored rules
+  check network [--sandbox NAME] TARGET   evaluate IPv4[:PORT], IPv6[:PORT], or URL
+  init allow-all|balanced|deny-all        set the global default profile
+  profile [ls]                            show the global default and available profiles
 
-Global (sandbox-less) rules, domain/wildcard rules, and filesystem policy are
-not implemented by the local runtime; the default is deny.
+reset/refresh/log/approvals and filesystem/domain rules are not implemented.
+Default is deny-all.
 `

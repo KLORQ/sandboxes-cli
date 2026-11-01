@@ -31,9 +31,10 @@ and reuses without prompting when stdin is not a terminal; --new always
 creates a fresh sandbox instead.
 
 Agents:
-  shell    available
-  claude, codex, copilot, cursor, devin, docker-agent, droid, gemini, kiro,
-  opencode  listed by the Docker sbx baseline; agent images are not implemented
+  shell, kimi              available
+  codex, gemini, opencode  preview (official image, not live-tested)
+  claude, cline, copilot, cursor, devin, docker-agent, droid, kiro
+                           unsupported
 
 Flags:
       --name NAME   sandbox name; reuse and restart it when it already exists
@@ -48,6 +49,9 @@ Flags:
                     allow egress CIDR rule (repeatable; optional udp: prefix)
       --deny-network CIDR[:PORT]
                     deny egress CIDR rule (repeatable; optional udp: prefix)
+      --policy-profile deny-all|balanced|sbx-compat
+                    opt-in egress profile (default deny-all)
+      --docker      run the dedicated Docker profile (privileged cgroup/network caps)
       --cpus N      CPUs for a new sandbox (0 selects the daemon default)
   -m, --memory SIZE memory limit for a new sandbox such as 512m or 2g
   -e, --env KEY=VALUE
@@ -58,29 +62,31 @@ Flags:
   -h, --help        help for run
 `
 
-	shellAgent    = "shell"
-	shellPath     = "/bin/sh"
-	helpCommand   = "help"
-	helpFlag      = "--help"
-	helpShort     = "-h"
-	detachFlag    = "--detach"
-	detachShort   = "-d"
-	nameFlag      = "--name"
-	newFlag       = "--new"
-	imageFlag     = "--image"
-	templateShort = "-t"
-	templateFlag  = "--template"
-	publishShort  = "-p"
-	publishFlag   = "--publish"
-	allowFlag     = "--allow-network"
-	denyFlag      = "--deny-network"
-	cpusFlag      = "--cpus"
-	memoryFlag    = "--memory"
-	memoryShort   = "-m"
-	envFlag       = "--env"
-	envShort      = "-e"
-	envFileFlag   = "--env-file"
-	removeFlag    = "--rm"
+	shellAgent        = "shell"
+	shellPath         = "/bin/sh"
+	helpCommand       = "help"
+	helpFlag          = "--help"
+	helpShort         = "-h"
+	detachFlag        = "--detach"
+	detachShort       = "-d"
+	nameFlag          = "--name"
+	newFlag           = "--new"
+	imageFlag         = "--image"
+	templateShort     = "-t"
+	templateFlag      = "--template"
+	publishShort      = "-p"
+	publishFlag       = "--publish"
+	policyProfileFlag = "--policy-profile"
+	dockerFlag        = "--docker"
+	allowFlag         = "--allow-network"
+	denyFlag          = "--deny-network"
+	cpusFlag          = "--cpus"
+	memoryFlag        = "--memory"
+	memoryShort       = "-m"
+	envFlag           = "--env"
+	envShort          = "-e"
+	envFileFlag       = "--env-file"
+	removeFlag        = "--rm"
 
 	formatFlag        = "--format"
 	jsonFlag          = "--json"
@@ -101,34 +107,32 @@ Flags:
 
 var errRunAgentRequired = errors.New("agent is required when --name is not set")
 
-var dockerSbxAgents = []string{
-	"claude", "codex", "copilot", "cursor", "devin", "docker-agent",
-	"droid", "gemini", "kiro", "opencode", shellAgent,
-}
-
 type runResources struct {
-	cpus   uint32
-	memory uint32
-	env    []string
-	ports  []sdk.Port
-	allow  []sdk.NetworkRule
-	deny   []sdk.NetworkRule
+	cpus    uint32
+	memory  uint32
+	env     []string
+	profile string
+	ports   []sdk.Port
+	allow   []sdk.NetworkRule
+	deny    []sdk.NetworkRule
 }
 
 type runOptions struct {
-	name     string
-	new      bool
-	image    string
-	publish  []string
-	allow    []string
-	deny     []string
-	cpus     uint
-	memory   string
-	env      []string
-	envFiles []string
-	detach   bool
-	remove   bool
-	help     bool
+	name       string
+	new        bool
+	image      string
+	publish    []string
+	allow      []string
+	deny       []string
+	profile    string
+	privileged bool
+	cpus       uint
+	memory     string
+	env        []string
+	envFiles   []string
+	detach     bool
+	remove     bool
+	help       bool
 }
 
 // run creates or reuses a sandbox, starts it, and attaches an agent session.
@@ -160,6 +164,7 @@ func (r *Runner) run(ctx context.Context, args []string) int {
 		}
 		return 2
 	}
+	applyAgentDefaults(agent, &opts.image, &opts.privileged)
 	resources, err := prepareRunResources(opts)
 	if err != nil {
 		_, _ = fmt.Fprintf(r.Err, "ksbx run: %v\n", err)
@@ -276,7 +281,7 @@ func prepareRunResources(opts runOptions) (runResources, error) {
 	if err != nil {
 		return runResources{}, err
 	}
-	return runResources{cpus: cpus, memory: memoryMiB, env: env, ports: ports, allow: allow, deny: deny}, nil
+	return runResources{cpus: cpus, memory: memoryMiB, env: env, profile: opts.profile, ports: ports, allow: allow, deny: deny}, nil
 }
 
 func (r *Runner) warnReusedResources(sandbox *sdk.Sandbox, opts runOptions, resources runResources) {
@@ -286,7 +291,7 @@ func (r *Runner) warnReusedResources(sandbox *sdk.Sandbox, opts runOptions, reso
 	if len(opts.publish) > 0 {
 		_, _ = fmt.Fprintf(r.Err, "warning: sandbox %s keeps its existing published ports; --publish applies only to new sandboxes\n", sandbox.Name)
 	}
-	if len(opts.allow) > 0 || len(opts.deny) > 0 {
+	if len(opts.allow) > 0 || len(opts.deny) > 0 || opts.profile != "" {
 		_, _ = fmt.Fprintf(r.Err, "warning: sandbox %s keeps its existing network policy; policy flags apply only to new sandboxes\n", sandbox.Name)
 	}
 }
@@ -379,6 +384,9 @@ func parseRunValuedFlag(args []string, index int, arg string, opts *runOptions) 
 		return consumed, true, err
 	case allowFlag:
 		consumed, err := parseRunListValue(args, index, allowFlag, &opts.allow)
+		return consumed, true, err
+	case policyProfileFlag:
+		consumed, err := parseRunValue(args, index, policyProfileFlag, &opts.profile)
 		return consumed, true, err
 	case denyFlag:
 		consumed, err := parseRunListValue(args, index, denyFlag, &opts.deny)
@@ -521,35 +529,21 @@ func validateRunRequest(opts runOptions, agent string) error {
 	return nil
 }
 
-func validateRunAgent(agent string) error {
-	if agent == shellAgent {
-		return nil
-	}
-	for _, known := range dockerSbxAgents {
-		if known == agent {
-			return fmt.Errorf("agent %q is not implemented yet; only the shell agent is available", agent)
-		}
-	}
-	return fmt.Errorf("unknown agent %q; use one of: %s", agent, strings.Join(dockerSbxAgents, ", "))
+func validateRunAgent(name string) error {
+	return validateAgent(name)
 }
 
 func isAgentName(value string) bool {
-	if value == shellAgent {
-		return true
+	registry, err := agentRegistry()
+	if err != nil {
+		return false
 	}
-	for _, known := range dockerSbxAgents {
-		if value == known {
-			return true
-		}
-	}
-	return false
+	_, ok := registry.Lookup(value)
+	return ok
 }
 
-func runArgv(agent string, agentArgs []string) []string {
-	if agent == shellAgent {
-		return append([]string{shellPath}, agentArgs...)
-	}
-	return append([]string{agent}, agentArgs...)
+func runArgv(name string, agentArgs []string) []string {
+	return append(agentCommandArgs(name), agentArgs...)
 }
 
 func runTerminal(input any) (interactive, tty bool) {
@@ -729,18 +723,20 @@ func (r *Runner) createRunSandbox(ctx context.Context, client sdk.Client, opts r
 		workspace = workspaces[0].Path
 	}
 	op, err := client.Sandboxes().Create(ctx, sdk.CreateRequest{
-		Name:       name,
-		Image:      opts.image,
-		Workspace:  workspace,
-		Workspaces: workspaces,
-		Ports:      resources.ports,
-		Allow:      resources.allow,
-		Deny:       resources.deny,
-		Agent:      agent,
-		Detached:   opts.detach,
-		CPUs:       resources.cpus,
-		MemoryMiB:  resources.memory,
-		Env:        envMap(resources.env),
+		Name:          name,
+		Image:         opts.image,
+		Workspace:     workspace,
+		Workspaces:    workspaces,
+		Ports:         resources.ports,
+		Allow:         resources.allow,
+		Deny:          resources.deny,
+		Agent:         agent,
+		Detached:      opts.detach,
+		CPUs:          resources.cpus,
+		MemoryMiB:     resources.memory,
+		PolicyProfile: resources.profile,
+		Privileged:    opts.privileged,
+		Env:           envMap(resources.env),
 	})
 	if err != nil {
 		return r.recoverRunCreate(ctx, client, opts, err)

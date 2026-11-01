@@ -52,14 +52,22 @@ and prints the sandbox ID. `--cpus`/`--memory` apply only when creating;
 reusing an existing sandbox warns and keeps its resources. `-e/--env` and
 `--env-file` add session env overrides. `--rm` removes the sandbox after the
 session (rejected with `--detach`). Only the `shell` agent is implemented;
-`claude`, `codex` and the other Docker `sbx` agent names are rejected until
-their images and auth contracts exist. Multiple workspaces are supported; a
-`:ro` suffix mounts a directory read-only. `--publish HOST:GUEST[/tcp|udp]` may be
-repeated when creating; `ksbx ports SANDBOX` lists the stored bindings;
-`ports --publish HOST:GUEST` / `--unpublish [HOST:]GUEST` change them live;
-`--publish GUEST` allocates an ephemeral loopback host port.
+`kimi` is available with the pinned `ghcr.io/klorq/sandbox-kimi:0.43.0` image
+(see `agents/kimi/`). `codex`, `gemini` and `opencode` are registered as
+preview using their official image names; `claude`, `cline` and the remaining
+agents are explicitly unsupported until an image/auth contract exists. The
+embedded registry is `internal/agent/registry.yaml`. Multiple workspaces are supported; a
+`:ro` suffix mounts a directory read-only. `--publish [[HOST_IP:]HOST_PORT:]GUEST[/tcp|udp|tcp4|udp4|tcp6|udp6]`
+may be repeated when creating, with loopback `HOST_IP` limited to `127.0.0.1` and
+`::1` (IPv6 uses brackets, e.g. `[::1]:8080:80/tcp6`); `ksbx ports SANDBOX`
+lists the stored bindings; `ports --publish ...` / `--unpublish ...` change them
+live; omitting `HOST_PORT` allocates an ephemeral host port on the selected
+loopback IP.
 `--allow-network CIDR[:PORT]` and `--deny-network CIDR[:PORT]` (optional `udp:`
-prefix) add create-time IPv4 egress rules; the default remains deny. `ksbx
+prefix) add create-time IPv4 egress rules; the default remains deny.
+`--policy-profile deny-all|balanced|sbx-compat` selects an opt-in egress preset
+(balanced: 80/443 + DNS; sbx-compat: all IPv4 network); it never changes the
+default. `ksbx
 policy ls SANDBOX` lists stored rules, `policy allow|deny SANDBOX CIDR[:PORT]`
 adds a rule and `policy rm SANDBOX CIDR[:PORT]` removes one; running sandboxes
 are updated live through the gateway reload ACK. `policy check SANDBOX IP PORT
