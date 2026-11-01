@@ -956,7 +956,6 @@ type removeOptions struct {
 	targets []string
 }
 
-//nolint:gocognit // removal handles all/force/targets in one command.
 func (r *Runner) remove(ctx context.Context, args []string) int {
 	opts, help, err := parseRemoveOptions(args)
 	if help {
