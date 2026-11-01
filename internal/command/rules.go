@@ -49,6 +49,14 @@ func parseNetworkRule(value string) (sdk.NetworkRule, error) {
 		}
 		return sdk.NetworkRule{Protocol: protocol, CIDR: target, Port: port}, nil
 	}
+	// A bare IP literal must become a /32 CIDR. Storing it as a domain rule
+	// would silently never match an IP flow (including a deny).
+	if ip := net.ParseIP(target); ip != nil {
+		if ip.To4() == nil {
+			return sdk.NetworkRule{}, errors.New("IPv6 network rules are not supported")
+		}
+		return sdk.NetworkRule{Protocol: protocol, CIDR: ip.String() + "/32", Port: port}, nil
+	}
 	if target == "**" {
 		return sdk.NetworkRule{Protocol: protocol, CIDR: "0.0.0.0/0", Port: port}, nil
 	}
@@ -58,10 +66,13 @@ func parseNetworkRule(value string) (sdk.NetworkRule, error) {
 	return sdk.NetworkRule{Protocol: protocol, Domain: strings.ToLower(target), Port: port}, nil
 }
 
-//nolint:gocyclo,cyclop // one compact grammar validator is clearer than a dispatch table.
+//nolint:gocyclo,cyclop,gocognit // one compact grammar validator is clearer than a dispatch table.
 func validateCLIDomain(target string) error {
 	if target == "" || len(target) > 253 || strings.ContainsAny(target, "\\ ") {
 		return errors.New("network rule must be an IPv4 CIDR or a domain")
+	}
+	if net.ParseIP(target) != nil {
+		return errors.New("network rule domain must not be an IP literal; use a CIDR")
 	}
 	base := target
 	switch {
