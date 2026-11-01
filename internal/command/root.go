@@ -653,7 +653,7 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	memory := fs.String("memory", "", "memory limit such as 512m or 2g (empty selects the daemon default)")
 	profile := fs.String("policy-profile", "", "egress profile: deny-all, balanced or sbx-compat")
 	privileged := fs.Bool("privileged", false, "run the dedicated Docker profile")
-	docker := fs.Bool("docker", false, "run the dedicated Docker profile")
+	fs.BoolVar(privileged, "docker", false, "run the dedicated Docker profile")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return createOptions{}, true, nil
@@ -694,7 +694,7 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	return createOptions{
 		name: name, agent: agent, image: *image, workspace: workspace, idempotencyKey: *idempotency,
 		workspaces: workspaces, ports: ports, allow: allow, deny: deny,
-		cpus: cpuCount, memoryMiB: memoryMiB, env: env, profile: *profile, privileged: *privileged || *docker,
+		cpus: cpuCount, memoryMiB: memoryMiB, env: env, profile: *profile, privileged: *privileged,
 	}, false, nil
 }
 
