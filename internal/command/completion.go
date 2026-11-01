@@ -14,7 +14,7 @@ var completionTree = map[string][]string{
 	"exec":            {"-i", "--interactive", "-t", "--tty", "-w", workdirFlag, envShort, envFlag, envFileFlag, "-u", userFlag},
 	"cp":              {"-L", "--follow-link"},
 	"ls":              {formatFlag, jsonFlag, "-q", "--quiet", "--limit"},
-	"get":             {},
+	commandGet:        {},
 	"ports":           {formatFlag, jsonFlag, publishFlag, "--unpublish"},
 	policyCommand:     {formatFlag, jsonFlag, sandboxFlag},
 	startCommand:      {graceFlag, formatFlag, jsonFlag},
@@ -32,8 +32,8 @@ var completionTree = map[string][]string{
 }
 
 var completionSubcommands = map[string][]string{
-	policyCommand:     {"ls", "inspect", "allow", "deny", "rm", "check", networkKeyword},
-	secretCommand:     {"ls", "set", "rm"},
+	policyCommand:     {"ls", commandInspect, actionAllow, actionDeny, "rm", "check", networkKeyword},
+	secretCommand:     {"ls", commandSet, "rm"},
 	completionCommand: {"bash", "zsh", "fish", "powershell"},
 }
 

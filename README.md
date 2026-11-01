@@ -38,8 +38,16 @@ ksbx completion bash > /tmp/ksbx-completion.bash
 source /tmp/ksbx-completion.bash
 ksbx --socket "$HOME/.sandboxes/sandboxesd.sock" wait <operation-id>
 ksbx secret set --registry ghcr.io --username <registry-user>
+ksbx secret set openai --sandbox dev          # hidden prompt; value stays in host keychain
+ksbx secret import --all
 ksbx secret ls
-ksbx secret rm --registry ghcr.io
+ksbx secret rm openai --sandbox dev
+ksbx settings ls
+ksbx settings set dns.upstream 1.1.1.1:53
+ksbx settings set policy.profile balanced
+ksbx attach dev
+ksbx kit inspect examples/kits/codex-go.yaml
+ksbx run --kit examples/kits/codex-go.yaml
 ```
 
 `ksbx create` mirrors the Docker grammar `create AGENT [PATH...]` with optional
@@ -52,11 +60,12 @@ and prints the sandbox ID. `--cpus`/`--memory` apply only when creating;
 reusing an existing sandbox warns and keeps its resources. `-e/--env` and
 `--env-file` add session env overrides. `--rm` removes the sandbox after the
 session (rejected with `--detach`). Only the `shell` agent is implemented;
-`kimi` is available with the pinned `ghcr.io/klorq/sandbox-kimi:0.43.0` image
-(see `agents/kimi/`). `codex`, `gemini` and `opencode` are registered as
-preview using their official image names; `claude`, `cline` and the remaining
-agents are explicitly unsupported until an image/auth contract exists. The
-embedded registry is `internal/agent/registry.yaml`. Multiple workspaces are supported; a
+`kimi` and `codex` use public pinned GHCR images (see `agents/kimi/` and the
+embedded registry). `gemini` and `opencode` are preview entries using their
+official image names; `dsh` serves the pinned DeepSeek Harness web UI on guest
+port 8080 and publishes it on a loopback port by default. `claude`, `cline` and
+the remaining agents are explicitly unsupported until an image/auth contract
+exists. The embedded registry is `internal/agent/registry.yaml`. Multiple workspaces are supported; a
 `:ro` suffix mounts a directory read-only. `--publish [[HOST_IP:]HOST_PORT:]GUEST[/tcp|udp|tcp4|udp4|tcp6|udp6]`
 may be repeated when creating, with loopback `HOST_IP` limited to `127.0.0.1` and
 `::1` (IPv6 uses brackets, e.g. `[::1]:8080:80/tcp6`); `ksbx ports SANDBOX`
@@ -65,18 +74,25 @@ live; omitting `HOST_PORT` allocates an ephemeral host port on the selected
 loopback IP.
 `--allow-network CIDR[:PORT]` and `--deny-network CIDR[:PORT]` (optional `udp:`
 prefix) add create-time IPv4 egress rules; the default remains deny.
-`--policy-profile deny-all|balanced|sbx-compat` selects an opt-in egress preset
-(balanced: 80/443 + DNS; sbx-compat: all IPv4 network); it never changes the
-default. `ksbx
-policy ls SANDBOX` lists stored rules, `policy allow|deny SANDBOX CIDR[:PORT]`
-adds a rule and `policy rm SANDBOX CIDR[:PORT]` removes one; running sandboxes
-are updated live through the gateway reload ACK. `policy check SANDBOX IP PORT
-[PROTOCOL]` evaluates stored rules (exit 0 allow, 1 deny). Domains,
-wildcards, reset/init/refresh, approvals and policy logs are not implemented. TCP and UDP
-are supported with explicit or ephemeral host ports; an occupied host port is
-rejected at create and dynamic updates reconcile gvproxy's forwarders without
-restarting the VM. IPv6 and public bindings are not. Kits and templates are not implemented. Reusing a `--name` with an explicitly
-different workspace set/mode fails instead of silently ignoring the mounts.
+`--policy-profile deny-all|balanced|sbx-compat` selects an egress preset
+(balanced: 80/443 + DNS; sbx-compat: all IPv4 network); the global default is
+`deny-all` and settings can change it. `ksbx policy ls [SANDBOX]` lists global
+and sandbox rules with `rule_id`, scope, action, protocol, target and port.
+`policy allow|deny|rm network [--sandbox NAME] TARGET` accepts an IPv4 CIDR or
+a domain (`example.com`, `*.example.com`, `**.example.com`, single-label
+`?`/`[]` globs), with an optional `:PORT`; deny wins across scopes and global
+changes are applied live to running sandboxes. Domain rules require a DNS
+upstream and resolve only allowlisted names; a domain rule is enforced after a
+DNS answer is bound to its IPs. `policy check network` evaluates CIDR or domain
+targets (exit 0 allow, 1 deny). `reset`, `refresh`, approvals, HTTP methods and
+filesystem rules are not implemented. TCP and UDP are supported with explicit
+or ephemeral host ports; an occupied host port is rejected at create and
+dynamic updates reconcile gvproxy's forwarders without restarting the VM.
+Loopback IPv4/IPv6 bindings are supported; public bindings are rejected.
+Local kits (`--kit FILE`) can set agent, image, profile and mounts; workspace
+seeding, signatures and MCP allowlists fail closed. Reusing a `--name` with an
+explicitly different workspace set/mode fails instead of silently ignoring the
+mounts.
 `ksbx exec -i/-t/-it` supports stdin, separate stdout/stderr, terminal size and
 resize, and returns the guest exit status. Missing commands exit 127, non-executable
 paths 126, sandbox/runtime errors 125, and signal exits use 128+signal
@@ -91,6 +107,15 @@ inside the guest using `id` and `/etc/group`, and unknown names fail closed.
 Environment values
 can be visible in host process arguments when passed with `-e`; do not put
 secrets in argv (prefer a bounded, permission-restricted env file).
+
+`ksbx attach [--shell] SANDBOX` starts a stopped sandbox and opens its agent
+session. `ksbx settings ls|get|set|unset` manages
+`~/.config/klorq/settings.toml` (`dns.upstream`, `policy.profile`,
+`defaults.cpus`, `defaults.memory_mib`, `sandbox.disk.dockerVolume`); DNS and
+daemon-owned consumers need a daemon restart. `ksbx secret` stores service API
+keys and registry credentials in the host keychain. Service secret values are
+not written to SQLite, logs or argv. The local broker does not yet proxy or
+inject them into guest processes; the command reports that explicitly.
 
 `ksbx cp` copies regular files and directory trees in either direction; exactly
 one side is `SANDBOX:PATH` with an absolute guest path. A guest destination

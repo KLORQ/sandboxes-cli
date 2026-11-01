@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWriteAndExtractCopyTarFile(t *testing.T) {
@@ -260,5 +261,50 @@ func TestHostCopyTargetHonorsTrailingSlash(t *testing.T) {
 	target, err = hostCopyTarget("/tmp", source, true)
 	if err != nil || target != "/tmp/file.txt" {
 		t.Fatalf("existing-dir target=%q err=%v", target, err)
+	}
+}
+
+// TestExtractCopyTarSanitizesMetadata pins the P-37 sanitize contract: payload
+// and permission bits survive, ownership, times, setuid/setgid and xattrs do
+// not. This is intentionally weaker than full metadata parity.
+func TestExtractCopyTarSanitizesMetadata(t *testing.T) {
+	var archive bytes.Buffer
+	tw := tar.NewWriter(&archive)
+	header := &tar.Header{
+		Name:     "source/file",
+		Typeflag: tar.TypeReg,
+		Mode:     0o4755,
+		Size:     4,
+		Uid:      4242,
+		Gid:      4343,
+		Uname:    "outside",
+		Gname:    "outside",
+		ModTime:  time.Unix(123456789, 0),
+		PAXRecords: map[string]string{
+			"user.test": "value",
+		},
+	}
+	if err := tw.WriteHeader(header); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte("data")); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "dest")
+	if err := extractCopyTar(&archive, dest, "source"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(dest, "file"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o755 || info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
+		t.Fatalf("mode=%v", info.Mode())
+	}
+	if data, err := os.ReadFile(filepath.Join(dest, "file")); err != nil || string(data) != "data" {
+		t.Fatalf("data=%q err=%v", data, err)
 	}
 }

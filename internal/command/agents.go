@@ -73,6 +73,30 @@ func validateAgent(name string) error {
 	return nil
 }
 
+func agentDefaultPorts(name string) []string {
+	registry, err := agentRegistry()
+	if err != nil {
+		return nil
+	}
+	spec, ok := registry.Lookup(name)
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), spec.DefaultPorts...)
+}
+
+func agentDetachCommand(name string) []string {
+	registry, err := agentRegistry()
+	if err != nil {
+		return nil
+	}
+	spec, ok := registry.Lookup(name)
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), spec.DetachCommand...)
+}
+
 func applyAgentDefaults(name string, image *string, privileged *bool) {
 	if name == "" {
 		return

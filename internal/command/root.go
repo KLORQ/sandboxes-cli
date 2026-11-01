@@ -17,11 +17,22 @@ import (
 	"golang.org/x/term"
 
 	sdk "github.com/KLORQ/sandboxes-go-sdk"
+
+	"github.com/KLORQ/sandboxes-cli/internal/kit"
 )
 
 const (
 	answerShortYes = "y"
 	answerYes      = "yes"
+
+	actionAllow       = "allow"
+	actionDeny        = "deny"
+	commandGet        = "get"
+	commandInspect    = "inspect"
+	commandList       = "list"
+	commandSet        = "set"
+	schemeHTTPS       = "https"
+	reasonDefaultDeny = "default deny"
 )
 
 const createUsage = `usage: ksbx create [AGENT] [PATH...] [--name NAME] [flags]
@@ -38,6 +49,7 @@ Flags:
   --deny-network CIDR[:PORT]  deny egress (repeatable)
   -t, --template REF          container image to use for the sandbox
   --image REF                 image override
+  --kit FILE                  apply a local kit definition
   --cpus N                    CPU count for a new sandbox
   --memory SIZE               memory limit (binary units)
   --docker                    run the dedicated Docker profile
@@ -113,9 +125,9 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		return r.version(ctx, rest[1:])
 	case "create":
 		return r.create(ctx, rest[1:])
-	case "ls", "list":
+	case "ls", commandList:
 		return r.list(ctx, rest[1:])
-	case "get":
+	case commandGet:
 		return r.get(ctx, rest[1:])
 	case startCommand:
 		return r.start(ctx, rest[1:])
@@ -152,10 +164,13 @@ func commandHintPath(cmdPath string) string {
 	return cmdPath + " "
 }
 
+//nolint:cyclop // one dispatch switch is the command router.
 func (r *Runner) runAuxiliaryCommand(ctx context.Context, name string, args []string) (int, bool) {
 	switch name {
 	case "run":
 		return r.run(ctx, args), true
+	case "attach":
+		return r.attach(ctx, args), true
 	case "exec":
 		return r.exec(ctx, args), true
 	case "cp":
@@ -174,6 +189,10 @@ func (r *Runner) runAuxiliaryCommand(ctx context.Context, name string, args []st
 		return r.ports(ctx, args), true
 	case policyCommand:
 		return r.policy(ctx, args), true
+	case "settings":
+		return r.settings(args), true
+	case "kit":
+		return r.kit(args), true
 	case completionCommand:
 		return r.completion(args), true
 	default:
@@ -389,19 +408,68 @@ func (r *Runner) secret(ctx context.Context, args []string) int {
 	}
 	switch args[0] {
 	case helpCommand, helpShort, helpFlag:
-		_, _ = fmt.Fprintln(r.Out, "usage: ksbx secret <set|rm> [flags]")
-		_, _ = fmt.Fprintln(r.Out, "commands: ls, set, rm (registry credentials only)")
+		_, _ = fmt.Fprintln(r.Out, "usage: ksbx secret <set|ls|rm> [flags]")
+		_, _ = fmt.Fprintln(r.Out, "commands: ls, set, rm (service secrets and registry credentials)")
 		return 0
-	case "set":
-		return r.registrySet(ctx, args[1:])
+	case commandSet:
+		if hasFlag(args[1:], "--registry") {
+			return r.registrySet(ctx, args[1:])
+		}
+		return r.serviceSecretSet(ctx, args[1:])
 	case "rm":
-		return r.registryRemove(ctx, args[1:])
+		if hasFlag(args[1:], "--registry") {
+			return r.registryRemove(ctx, args[1:])
+		}
+		return r.serviceSecretRemove(ctx, args[1:])
 	case "ls":
-		return r.registryList(ctx, args[1:])
+		return r.serviceSecretList(ctx, args[1:])
+	case "import":
+		return r.serviceSecretImport(ctx, args[1:])
 	default:
 		_, _ = fmt.Fprintln(r.Err, "unknown secret command")
 		return 2
 	}
+}
+
+// reorderFlagArgs moves flags and their values before positionals so the
+// standard library flag parser accepts the Docker sbx flag-after-argument
+// grammar. It never interprets values as flags.
+func reorderFlagArgs(args []string, valueFlags map[string]bool) []string {
+	flags := make([]string, 0, len(args))
+	positionals := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			positionals = append(positionals, args[i+1:]...)
+			break
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			positionals = append(positionals, arg)
+			continue
+		}
+		flags = append(flags, arg)
+		name, _, hasValue := strings.Cut(arg, "=")
+		if hasValue {
+			continue
+		}
+		if valueFlags[name] && i+1 < len(args) {
+			i++
+			flags = append(flags, args[i])
+		}
+	}
+	return append(flags, positionals...)
+}
+
+func hasFlag(args []string, name string) bool {
+	for _, arg := range args {
+		if arg == name || strings.HasPrefix(arg, name+"=") {
+			return true
+		}
+		if arg == "--" {
+			return false
+		}
+	}
+	return false
 }
 
 func (r *Runner) registryRemove(ctx context.Context, args []string) int {
@@ -762,6 +830,7 @@ func resolveCreateWorkspaces(workspaceFlags stringListFlag, paths []string) ([]s
 	return resolveWorkspaces(combined, false)
 }
 
+//nolint:gocyclo,cyclop,funlen // create accepts the full documented flag matrix.
 func parseCreateOptions(args []string) (createOptions, bool, error) {
 	fs := flag.NewFlagSet("create", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -786,19 +855,38 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	memory := fs.String("memory", "", "memory limit such as 512m or 2g (empty selects the daemon default)")
 	profile := fs.String("policy-profile", "", "egress profile: deny-all, balanced or sbx-compat")
 	privileged := fs.Bool("docker", false, "run the dedicated Docker profile")
+	kitPath := fs.String("kit", "", "apply a local kit definition")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return createOptions{}, true, nil
 		}
 		return createOptions{}, false, flagParseError{err: err}
 	}
-	name, agent, paths, err := parseCreatePositionals(fs.Args(), *nameFlag)
+	positionals := fs.Args()
+	if *kitPath != "" && len(positionals) == 0 {
+		doc, err := kit.Load(*kitPath)
+		if err != nil {
+			return createOptions{}, false, err
+		}
+		if doc.Spec.Agent == "" {
+			return createOptions{}, false, fmt.Errorf("kit %s does not define an agent", *kitPath)
+		}
+		positionals = []string{doc.Spec.Agent}
+	}
+	name, agent, paths, err := parseCreatePositionals(positionals, *nameFlag)
 	if err != nil {
 		return createOptions{}, false, err
 	}
 	imageRef, err := resolveTemplateImage(*image, *template)
 	if err != nil {
 		return createOptions{}, false, err
+	}
+	if *kitPath != "" {
+		kitPaths := []string(workspaceFlags)
+		if err := applyKit(*kitPath, &agent, &imageRef, profile, &kitPaths); err != nil {
+			return createOptions{}, false, err
+		}
+		workspaceFlags = kitPaths
 	}
 	applyAgentDefaults(agent, &imageRef, privileged)
 	cpuCount, memoryMiB, err := validateCreateResources(*cpus, *memory)
@@ -868,6 +956,7 @@ type removeOptions struct {
 	targets []string
 }
 
+//nolint:gocognit // removal handles all/force/targets in one command.
 func (r *Runner) remove(ctx context.Context, args []string) int {
 	opts, help, err := parseRemoveOptions(args)
 	if help {
@@ -1142,7 +1231,7 @@ func (r *Runner) printSandbox(sb *sdk.Sandbox) {
 
 func (r *Runner) usage() {
 	_, _ = fmt.Fprintln(r.Out, "usage: ksbx [--socket PATH] <command>")
-	_, _ = fmt.Fprintln(r.Out, "commands: run, create, exec, cp, ls, get, ports, policy, start, stop, rm, prune, diagnose, wait, login, logout, secret, completion, version, help")
+	_, _ = fmt.Fprintln(r.Out, "commands: run, attach, create, exec, cp, ls, get, ports, policy, settings, start, stop, rm, prune, diagnose, wait, login, logout, secret, completion, version, help")
 	_, _ = fmt.Fprintln(r.Out, "global flags: --socket PATH  daemon unix socket")
 	_, _ = fmt.Fprintln(r.Out, `Use "ksbx <command> --help" for command details.`)
 }
@@ -1217,11 +1306,4 @@ func resolveCreateNetwork(publish, allow, deny []string) ([]sdk.Port, []sdk.Netw
 		return nil, nil, nil, err
 	}
 	return ports, allowRules, denyRules, nil
-}
-
-func firstWorkspacePath(workspaces []sdk.Workspace) string {
-	if len(workspaces) == 0 {
-		return ""
-	}
-	return workspaces[0].Path
 }

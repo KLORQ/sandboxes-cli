@@ -74,6 +74,7 @@ Flags:
 	imageFlag         = "--image"
 	templateShort     = "-t"
 	templateFlag      = "--template"
+	kitFlag           = "--kit"
 	publishShort      = "-p"
 	publishFlag       = "--publish"
 	policyProfileFlag = "--policy-profile"
@@ -126,6 +127,7 @@ type runOptions struct {
 	deny       []string
 	profile    string
 	privileged bool
+	kit        string
 	cpus       uint
 	memory     string
 	env        []string
@@ -157,6 +159,13 @@ func (r *Runner) run(ctx context.Context, args []string) int {
 		_, _ = fmt.Fprintf(r.Err, "ksbx run: %v\n", err)
 		return 2
 	}
+	if opts.kit != "" {
+		if err := applyKit(opts.kit, &agent, &opts.image, &opts.profile, &workspacePaths); err != nil {
+			_, _ = fmt.Fprintf(r.Err, "ksbx run: %v\n", err)
+			return 2
+		}
+		workspacesExplicit = true
+	}
 	if err := validateRunRequest(opts, agent); err != nil {
 		_, _ = fmt.Fprintf(r.Err, "ksbx run: %v\n", err)
 		if errors.Is(err, errRunAgentRequired) {
@@ -165,6 +174,9 @@ func (r *Runner) run(ctx context.Context, args []string) int {
 		return 2
 	}
 	applyAgentDefaults(agent, &opts.image, &opts.privileged)
+	if len(opts.publish) == 0 {
+		opts.publish = agentDefaultPorts(agent)
+	}
 	resources, err := prepareRunResources(opts)
 	if err != nil {
 		_, _ = fmt.Fprintf(r.Err, "ksbx run: %v\n", err)
@@ -186,6 +198,7 @@ func (r *Runner) run(ctx context.Context, args []string) int {
 	return r.runAttached(ctx, client, opts, sandbox, created, agent, workspaces, workspacesExplicit, agentArgs, resources)
 }
 
+//nolint:gocognit,gocyclo,cyclop,nestif // attach/terminal/detach semantics form one transaction.
 func (r *Runner) runAttached(ctx context.Context, client sdk.Client, opts runOptions, sandbox *sdk.Sandbox, created bool, agent string, workspaces []sdk.Workspace, workspacesExplicit bool, agentArgs []string, resources runResources) int {
 	if sandbox == nil || sandbox.ID == "" {
 		r.error(errors.New("sandbox creation returned no sandbox"))
@@ -203,6 +216,19 @@ func (r *Runner) runAttached(ctx context.Context, client sdk.Client, opts runOpt
 		return 1
 	}
 	if opts.detach {
+		if argv := agentDetachCommand(agent); len(argv) > 0 {
+			code, err := sdk.ExecService(client).Exec(ctx, sdk.ExecRequest{
+				SandboxID: sandbox.ID, Argv: argv, Stdout: r.Out, Stderr: r.Err,
+			})
+			if err != nil {
+				r.error(fmt.Errorf("start detached agent: %w", err))
+				return 1
+			}
+			if code != 0 {
+				r.error(fmt.Errorf("start detached agent: exit status %d", code))
+				return 1
+			}
+		}
 		_, _ = fmt.Fprintln(r.Out, sandbox.ID)
 		return 0
 	}
@@ -379,6 +405,9 @@ func parseRunValuedFlag(args []string, index int, arg string, opts *runOptions) 
 	case templateShort, templateFlag:
 		consumed, err := parseRunValue(args, index, templateFlag, &opts.image)
 		return consumed, true, err
+	case kitFlag:
+		consumed, err := parseRunValue(args, index, kitFlag, &opts.kit)
+		return consumed, true, err
 	case publishShort, publishFlag:
 		consumed, err := parseRunListValue(args, index, publishFlag, &opts.publish)
 		return consumed, true, err
@@ -419,6 +448,10 @@ func parseRunAssignmentFlag(arg string, opts *runOptions) (int, bool, error) {
 	}
 	if value, ok := strings.CutPrefix(arg, templateFlag+"="); ok {
 		consumed, err := setRunValue(templateFlag, value, &opts.image)
+		return consumed, true, err
+	}
+	if value, ok := strings.CutPrefix(arg, kitFlag+"="); ok {
+		consumed, err := setRunValue(kitFlag, value, &opts.kit)
 		return consumed, true, err
 	}
 	if value, ok := strings.CutPrefix(arg, publishFlag+"="); ok {

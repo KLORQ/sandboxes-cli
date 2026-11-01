@@ -34,7 +34,7 @@ func TestSecretList(t *testing.T) {
 	if code := runner.Run(context.Background(), []string{"secret", "ls", "--json"}); code != 0 {
 		t.Fatalf("json exit=%d", code)
 	}
-	var items []registrySecretOutput
+	var items []serviceSecretOutput
 	if err := json.Unmarshal(out.Bytes(), &items); err != nil || len(items) != 1 || items[0].Username != "alice" {
 		t.Fatalf("items=%+v err=%v", items, err)
 	}
@@ -46,7 +46,7 @@ func TestSecretListEmpty(t *testing.T) {
 	if code := runner.Run(context.Background(), []string{"secret", "ls"}); code != 0 {
 		t.Fatalf("exit=%d output=%q", code, out.String())
 	}
-	if !bytes.Contains(out.Bytes(), []byte("No registry credentials")) {
+	if !bytes.Contains(out.Bytes(), []byte("No secrets stored")) {
 		t.Fatalf("output=%q", out.String())
 	}
 }

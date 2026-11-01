@@ -5,16 +5,16 @@ agents:
     command: ["/bin/sh"]
     status: available
   - name: kimi
-    image: ghcr.io/klorq/sandbox-kimi:0.43.0
+    image: ghcr.io/klorq/sandbox-kimi@sha256:b81684d2216bfa6b5a99872ee3917cf6e25e039bf5a61d47171ebcaaf0a46203
     command: ["kimi"]
-    status: preview
-    notes: image publish pending
+    status: available
+    notes: public pinned image; live-tested on the released CLI
   - name: codex
-    image: ghcr.io/klorq/sandbox-codex:0.1
+    image: ghcr.io/klorq/sandbox-codex@sha256:a20eb5b7b1e9c2e89354ef3fa8c3db523859476ce412635a763878213cb879cc
     command: ["codex"]
-    status: preview
+    status: available
     docker: true
-    notes: flattened codex image; nested Docker profile auto-enabled
+    notes: public pinned image; nested Docker profile auto-enabled
   - name: gemini
     image: docker/sandbox-templates:gemini-docker
     command: ["gemini"]
@@ -23,6 +23,13 @@ agents:
     image: docker/sandbox-templates:opencode-docker
     command: ["opencode"]
     status: preview
+  - name: dsh
+    image: ghcr.io/klorq/sandbox-dsh@sha256:c92f465e0b178cd470e194c82b92b096225e211a851c59f57dc71ccbf259bfda
+    command: ["dsh", "web"]
+    status: preview
+    default_ports: ["8080/tcp4"]
+    detach_command: ["/bin/sh", "-c", "nohup /usr/local/bin/klorq-dsh-entrypoint >/tmp/klorq-dsh.log 2>&1 &"]
+    notes: DeepSeek Harness web UI on guest port 8080, published on 127.0.0.1 by default
   - name: claude
     status: unsupported
   - name: cline

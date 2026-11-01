@@ -152,7 +152,7 @@ func TestPolicyCheckNetworkGrammar(t *testing.T) {
 		{[]string{"policy", "check", "network", "--sandbox", "dev", "192.0.2.1"}, 0, "allowed: allow rule 192.0.2.0/24"},
 		{[]string{"policy", "check", "network", "--sandbox", "dev", "198.51.100.9:443"}, 1, "denied: default deny"},
 		{[]string{"policy", "check", "network", "198.51.100.1"}, 1, "denied: default deny"},
-		{[]string{"policy", "allow", "network", "192.0.2.0/24"}, 1, "global policy rules are not implemented"},
+		{[]string{"policy", "allow", "network", "192.0.2.0/24"}, 1, "global policy is not supported"},
 		{[]string{"policy", "check", "network", "https://192.0.2.1/x"}, 1, "denied: default deny"},
 	}
 	for _, tc := range cases {
