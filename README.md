@@ -55,7 +55,9 @@ ksbx run --kit examples/kits/codex-go.yaml
 `:ro` suffix. The legacy `create NAME` and repeated `--workspace` forms remain
 supported. `ksbx run` creates a sandbox (or reuses `--name`), starts it if needed, and
 attaches an interactive shell. The default workspace is the current directory;
-multiple PATH arguments may follow the agent, with an optional `:ro` suffix. `--detach` creates and starts without attaching
+multiple PATH arguments may follow the agent, with an optional `:ro` suffix.
+`--deny-write PATH` adds a read-only subpath mount, so a writable parent can
+hold a protected child. `--detach` creates and starts without attaching
 and prints the sandbox ID. `--cpus`/`--memory` apply only when creating;
 reusing an existing sandbox warns and keeps its resources. `-e/--env` and
 `--env-file` add session env overrides. `--rm` removes the sandbox after the

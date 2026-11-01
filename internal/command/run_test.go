@@ -406,3 +406,16 @@ func TestRunBakesEnvOnCreate(t *testing.T) {
 		t.Fatalf("create env=%v", sandboxes.created.Env)
 	}
 }
+
+func TestRunDenyWriteAddsReadOnlyWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	sandboxes := &runSandbox{}
+	sessions := &fakeSessions{}
+	runner, out, stderr := runTestRunner(t, runClient{sandboxes: sandboxes, sessions: sessions}, "")
+	if code := runner.Run(context.Background(), []string{"run", "--name", "deny", "--deny-write", workspace, "shell"}); code != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, out.String(), stderr.String())
+	}
+	if len(sandboxes.created.Workspaces) != 1 || !sandboxes.created.Workspaces[0].ReadOnly {
+		t.Fatalf("workspaces=%+v", sandboxes.created.Workspaces)
+	}
+}

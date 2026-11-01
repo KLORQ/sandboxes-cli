@@ -52,6 +52,7 @@ Flags:
   -t, --template REF          container image to use for the sandbox
   --image REF                 image override
   --kit FILE                  apply a local kit definition
+  --deny-write PATH           mount PATH read-only (repeatable)
   --cpus N                    CPU count for a new sandbox
   --memory SIZE               memory limit (binary units)
   --docker                    run the dedicated Docker profile
@@ -880,6 +881,8 @@ func parseCreateOptions(ctx context.Context, args []string) (createOptions, bool
 	profile := fs.String("policy-profile", "", "egress profile: deny-all, balanced or sbx-compat")
 	privileged := fs.Bool("docker", false, "run the dedicated Docker profile")
 	kitPath := fs.String("kit", "", "apply a local kit definition")
+	var denyWriteFlags stringListFlag
+	fs.Var(&denyWriteFlags, "deny-write", "mount PATH read-only (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return createOptions{}, true, nil
@@ -916,6 +919,9 @@ func parseCreateOptions(ctx context.Context, args []string) (createOptions, bool
 	cpuCount, memoryMiB, err := validateCreateResources(*cpus, *memory)
 	if err != nil {
 		return createOptions{}, false, err
+	}
+	for _, target := range denyWriteFlags {
+		workspaceFlags = append(workspaceFlags, target+":ro")
 	}
 	workspaces, err := resolveCreateWorkspaces(workspaceFlags, paths)
 	if err != nil {

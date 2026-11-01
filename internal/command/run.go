@@ -75,6 +75,7 @@ Flags:
 	templateShort     = "-t"
 	templateFlag      = "--template"
 	kitFlag           = "--kit"
+	denyWriteFlag     = "--deny-write"
 	publishShort      = "-p"
 	publishFlag       = "--publish"
 	policyProfileFlag = "--policy-profile"
@@ -128,6 +129,7 @@ type runOptions struct {
 	profile    string
 	privileged bool
 	kit        string
+	denyWrite  []string
 	cpus       uint
 	memory     string
 	env        []string
@@ -166,6 +168,12 @@ func (r *Runner) run(ctx context.Context, args []string) int {
 		}
 		workspacesExplicit = true
 	}
+	if len(opts.denyWrite) > 0 {
+		for _, target := range opts.denyWrite {
+			workspacePaths = append(workspacePaths, target+":ro")
+		}
+		workspacesExplicit = true
+	}
 	if err := validateRunRequest(opts, agent); err != nil {
 		_, _ = fmt.Fprintf(r.Err, "ksbx run: %v\n", err)
 		if errors.Is(err, errRunAgentRequired) {
@@ -198,7 +206,7 @@ func (r *Runner) run(ctx context.Context, args []string) int {
 	return r.runAttached(ctx, client, opts, sandbox, created, agent, workspaces, workspacesExplicit, agentArgs, resources)
 }
 
-//nolint:gocognit,gocyclo,cyclop,nestif // attach/terminal/detach semantics form one transaction.
+//nolint:gocognit,gocyclo,cyclop,nestif,gocritic // attach/terminal/detach semantics form one transaction.
 func (r *Runner) runAttached(ctx context.Context, client sdk.Client, opts runOptions, sandbox *sdk.Sandbox, created bool, agent string, workspaces []sdk.Workspace, workspacesExplicit bool, agentArgs []string, resources runResources) int {
 	if sandbox == nil || sandbox.ID == "" {
 		r.error(errors.New("sandbox creation returned no sandbox"))
@@ -279,6 +287,7 @@ func removeRunSandbox(ctx context.Context, client sdk.Client, sandbox *sdk.Sandb
 	return nil
 }
 
+//nolint:gocritic // runOptions is an immutable value object.
 func prepareRunResources(opts runOptions) (runResources, error) {
 	if opts.remove && opts.detach {
 		return runResources{}, errors.New("--rm cannot be combined with --detach")
@@ -310,6 +319,7 @@ func prepareRunResources(opts runOptions) (runResources, error) {
 	return runResources{cpus: cpus, memory: memoryMiB, env: env, profile: opts.profile, ports: ports, allow: allow, deny: deny}, nil
 }
 
+//nolint:gocritic // runOptions is an immutable value object.
 func (r *Runner) warnReusedResources(sandbox *sdk.Sandbox, opts runOptions, resources runResources) {
 	if resources.cpus != 0 || resources.memory != 0 {
 		_, _ = fmt.Fprintf(r.Err, "warning: sandbox %s keeps its existing CPU/memory; sizing flags apply only to new sandboxes\n", sandbox.Name)
@@ -408,6 +418,9 @@ func parseRunValuedFlag(args []string, index int, arg string, opts *runOptions) 
 	case kitFlag:
 		consumed, err := parseRunValue(args, index, kitFlag, &opts.kit)
 		return consumed, true, err
+	case denyWriteFlag:
+		consumed, err := parseRunListValue(args, index, denyWriteFlag, &opts.denyWrite)
+		return consumed, true, err
 	case publishShort, publishFlag:
 		consumed, err := parseRunListValue(args, index, publishFlag, &opts.publish)
 		return consumed, true, err
@@ -452,6 +465,10 @@ func parseRunAssignmentFlag(arg string, opts *runOptions) (int, bool, error) {
 	}
 	if value, ok := strings.CutPrefix(arg, kitFlag+"="); ok {
 		consumed, err := setRunValue(kitFlag, value, &opts.kit)
+		return consumed, true, err
+	}
+	if value, ok := strings.CutPrefix(arg, denyWriteFlag+"="); ok {
+		consumed, err := appendRunListValue(denyWriteFlag, value, &opts.denyWrite)
 		return consumed, true, err
 	}
 	if value, ok := strings.CutPrefix(arg, publishFlag+"="); ok {
@@ -552,6 +569,7 @@ func parseRunPositionals(positionals []string) (agent string, paths []string, ex
 	return agent, paths, len(paths) > 0, nil
 }
 
+//nolint:gocritic // runOptions is an immutable value object.
 func validateRunRequest(opts runOptions, agent string) error {
 	if agent != "" {
 		return validateRunAgent(agent)
@@ -613,6 +631,7 @@ func checkReusedWorkspace(sandbox *sdk.Sandbox, requested []sdk.Workspace) error
 	return nil
 }
 
+//nolint:gocritic // runOptions is an immutable value object.
 func (r *Runner) reuseOrCreateSandbox(ctx context.Context, client sdk.Client, opts runOptions, agent string, paths []string, explicit bool, resources runResources) (*sdk.Sandbox, bool, []sdk.Workspace, error) {
 	if opts.name != "" {
 		reused, requested, found, err := r.reuseNamedRunSandbox(ctx, client, opts, paths, explicit)
@@ -635,6 +654,8 @@ func (r *Runner) reuseOrCreateSandbox(ctx context.Context, client sdk.Client, op
 
 // reuseNamedRunSandbox reuses an existing sandbox selected by --name unless
 // --new asks for a fresh one.
+//
+//nolint:gocritic // runOptions is an immutable value object.
 func (r *Runner) reuseNamedRunSandbox(ctx context.Context, client sdk.Client, opts runOptions, paths []string, explicit bool) (*sdk.Sandbox, []sdk.Workspace, bool, error) {
 	existing, requested, found, err := r.findRunReuse(ctx, client, opts.name, paths, explicit)
 	if err != nil {
@@ -746,6 +767,7 @@ func (r *Runner) findRunReuse(ctx context.Context, client sdk.Client, name strin
 	return existing, requested, true, nil
 }
 
+//nolint:gocritic // runOptions is an immutable value object.
 func (r *Runner) createRunSandbox(ctx context.Context, client sdk.Client, opts runOptions, agent string, paths []string, workspaces []sdk.Workspace, resources runResources) (*sdk.Sandbox, bool, error) {
 	name, err := runSandboxName(ctx, client, opts.name, agent, workspaceNameBase(paths))
 	if err != nil {
@@ -791,6 +813,7 @@ func (r *Runner) createRunSandbox(ctx context.Context, client sdk.Client, opts r
 	return created, true, nil
 }
 
+//nolint:gocritic // runOptions is an immutable value object.
 func (r *Runner) recoverRunCreate(ctx context.Context, client sdk.Client, opts runOptions, createErr error) (*sdk.Sandbox, bool, error) {
 	if opts.name != "" && !opts.new {
 		// A concurrent creator may have won the name; reuse only a sandbox
