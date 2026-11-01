@@ -73,7 +73,7 @@ func validateAgent(name string) error {
 	return nil
 }
 
-func applyAgentDefaults(name string, image, profile *string, privileged *bool) {
+func applyAgentDefaults(name string, image *string, privileged *bool) {
 	if name == "" {
 		return
 	}
@@ -84,7 +84,4 @@ func applyAgentDefaults(name string, image, profile *string, privileged *bool) {
 		return
 	}
 	*privileged = true
-	if *profile == "" {
-		*profile = "sbx-compat"
-	}
 }

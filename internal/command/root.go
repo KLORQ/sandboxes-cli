@@ -662,7 +662,7 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	if err != nil {
 		return createOptions{}, false, err
 	}
-	applyAgentDefaults(agent, image, profile, privileged)
+	applyAgentDefaults(agent, image, privileged)
 	cpuCount, err := validateCPUs(*cpus)
 	if err != nil {
 		return createOptions{}, false, err

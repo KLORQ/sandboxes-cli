@@ -58,8 +58,8 @@ func TestAgentRegistryPreviewAndUnsupported(t *testing.T) {
 	}
 	var image, profile string
 	var docker bool
-	applyAgentDefaults("codex", &image, &profile, &docker)
-	if image != "ghcr.io/klorq/sandbox-codex:0.1" || profile != "sbx-compat" || !docker {
+	applyAgentDefaults("codex", &image, &docker)
+	if image != "ghcr.io/klorq/sandbox-codex:0.1" || profile != "" || !docker {
 		t.Fatalf("codex defaults image=%q profile=%q docker=%v", image, profile, docker)
 	}
 	if err := validateRunAgent("codex"); err != nil {

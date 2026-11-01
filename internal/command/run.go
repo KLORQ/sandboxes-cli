@@ -129,7 +129,7 @@ func (r *Runner) run(ctx context.Context, args []string) int {
 		}
 		return 2
 	}
-	applyAgentDefaults(agent, &opts.image, &opts.profile, &opts.privileged)
+	applyAgentDefaults(agent, &opts.image, &opts.privileged)
 	resources, err := prepareRunResources(opts)
 	if err != nil {
 		_, _ = fmt.Fprintf(r.Err, "ksbx run: %v\n", err)
