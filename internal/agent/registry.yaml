@@ -24,7 +24,7 @@ agents:
     command: ["opencode"]
     status: preview
   - name: dsh
-    image: ghcr.io/klorq/sandbox-dsh@sha256:c92f465e0b178cd470e194c82b92b096225e211a851c59f57dc71ccbf259bfda
+    image: ghcr.io/klorq/sandbox-dsh-preview@sha256:f37c7065aca89c14b0b45418c68cda74b451047688a34df6364694381d97d772
     command: ["dsh", "web"]
     status: preview
     default_ports: ["8080/tcp4"]
