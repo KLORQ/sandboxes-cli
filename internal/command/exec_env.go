@@ -179,3 +179,17 @@ func envMap(entries []string) map[string]string {
 	}
 	return out
 }
+
+// withoutSecretRefs removes host-vault references from sandbox base env. They
+// are resolved by the daemon only for the exec session, so a literal sentinel
+// cannot be baked into the VM configuration or snapshots.
+func withoutSecretRefs(entries []string) []string {
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if strings.Contains(entry, "${secret:") {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
+}

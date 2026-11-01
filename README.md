@@ -114,8 +114,10 @@ session. `ksbx settings ls|get|set|unset` manages
 `defaults.cpus`, `defaults.memory_mib`, `sandbox.disk.dockerVolume`); DNS and
 daemon-owned consumers need a daemon restart. `ksbx secret` stores service API
 keys and registry credentials in the host keychain. Service secret values are
-not written to SQLite, logs or argv. The local broker does not yet proxy or
-inject them into guest processes; the command reports that explicitly.
+not written to SQLite, logs or argv. `-e KEY=${secret:service}` is resolved by
+the daemon at exec time; sandbox scope wins over global. This is opt-in
+environment injection (the guest process can read its own env), not the host
+proxy used by Docker sbx.
 
 `ksbx cp` copies regular files and directory trees in either direction; exactly
 one side is `SANDBOX:PATH` with an absolute guest path. A guest destination
