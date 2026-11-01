@@ -41,7 +41,6 @@ Flags:
       --policy-profile deny-all|balanced|sbx-compat
                     opt-in egress profile (default deny-all)
       --docker      run the dedicated Docker profile (privileged cgroup/network caps)
-      --privileged  alias for --docker
       --cpus N      CPUs for a new sandbox (0 selects the daemon default)
   -m, --memory SIZE memory limit for a new sandbox such as 512m or 2g
   -e, --env KEY=VALUE

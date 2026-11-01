@@ -42,7 +42,6 @@ Flags:
   --cpus N                    CPU count for a new sandbox
   --memory SIZE               memory limit (binary units)
   --docker                    run the dedicated Docker profile
-  --privileged                alias for --docker
   --idempotency-key KEY       idempotency key
   -e, --env KEY=VALUE         environment for every process (repeatable)
   --env-file FILE             read environment overrides from a file (repeatable)
@@ -652,8 +651,7 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	cpus := fs.Uint("cpus", 0, "CPUs (0 selects the daemon default)")
 	memory := fs.String("memory", "", "memory limit such as 512m or 2g (empty selects the daemon default)")
 	profile := fs.String("policy-profile", "", "egress profile: deny-all, balanced or sbx-compat")
-	privileged := fs.Bool("privileged", false, "run the dedicated Docker profile")
-	fs.BoolVar(privileged, "docker", false, "run the dedicated Docker profile")
+	privileged := fs.Bool("docker", false, "run the dedicated Docker profile")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return createOptions{}, true, nil
