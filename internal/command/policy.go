@@ -2,6 +2,8 @@ package command
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -28,9 +30,12 @@ type policyRuleOutput struct {
 	Protocol     string `json:"protocol" yaml:"protocol"`
 	CIDR         string `json:"cidr,omitempty" yaml:"cidr,omitempty"`
 	Domain       string `json:"domain,omitempty" yaml:"domain,omitempty"`
+	Path         string `json:"path,omitempty" yaml:"path,omitempty"`
+	Access       string `json:"access,omitempty" yaml:"access,omitempty"`
 	Port         uint16 `json:"port" yaml:"port"`
 }
 
+//nolint:cyclop // one command dispatch switch.
 func (r *Runner) policy(ctx context.Context, args []string) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprint(r.Err, policyUsage)
@@ -42,6 +47,9 @@ func (r *Runner) policy(ctx context.Context, args []string) int {
 	case "check":
 		if len(args) > 1 && args[1] == networkKeyword {
 			return r.policyCheckNetwork(ctx, args[2:])
+		}
+		if len(args) > 1 && args[1] == filesystemKeyword {
+			return r.policyCheckFilesystem(ctx, args[2:])
 		}
 		return r.policyCheck(ctx, args[1:])
 	case actionAllow, actionDeny, "rm":
@@ -377,6 +385,7 @@ func evaluatePolicyTarget(allow, deny []sdk.NetworkRule, protocol string, ip net
 }
 
 func (r *Runner) policyList(ctx context.Context, args []string) int {
+	args = reorderFlagArgs(args, map[string]bool{"--format": true})
 	fs := flag.NewFlagSet("policy ls", flag.ContinueOnError)
 	fs.SetOutput(r.Err)
 	format := fs.String("format", listFormatTable, "output format: table, json or yaml")
@@ -560,7 +569,82 @@ func parsePolicyDestination(value string) (net.IP, error) {
 }
 
 func policyRules(sb *sdk.Sandbox) []policyRuleOutput {
-	return policyRulesFrom("sandbox", sb.Allow, sb.Deny)
+	out := policyRulesFrom("sandbox", sb.Allow, sb.Deny)
+	for _, workspace := range sb.Workspaces {
+		readID := filesystemRuleID(workspace.Path, "read")
+		out = append(out, policyRuleOutput{RuleID: readID, Scope: sandboxPrefix, ResourceType: filesystemKeyword,
+			Action: actionAllow, Provenance: "workspace", Path: workspace.Path, Access: "read"})
+		action := actionAllow
+		if workspace.ReadOnly {
+			action = actionDeny
+		}
+		out = append(out, policyRuleOutput{RuleID: filesystemRuleID(workspace.Path, "write"), Scope: sandboxPrefix, ResourceType: filesystemKeyword,
+			Action: action, Provenance: "workspace", Path: workspace.Path, Access: "write"})
+	}
+	return out
+}
+
+func filesystemRuleID(targetPath, access string) string {
+	sum := sha256.Sum256([]byte("filesystem\x00" + targetPath + "\x00" + access))
+	return "rul_" + hex.EncodeToString(sum[:8])
+}
+
+// policyCheckFilesystem evaluates the workspace mount policy. The guest rootfs
+// is read-only, so only declared workspaces can be written.
+func (r *Runner) policyCheckFilesystem(ctx context.Context, args []string) int {
+	fs := flag.NewFlagSet("policy check filesystem", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	sandboxName := fs.String("sandbox", "", "scope the check to one sandbox")
+	write := fs.Bool("write", false, "check write access instead of read")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return r.flagParseFailure("policy check filesystem", err)
+	}
+	if *sandboxName == "" || fs.NArg() != 1 {
+		_, _ = fmt.Fprintln(r.Err, "usage: ksbx policy check filesystem --sandbox NAME [--write] PATH")
+		return 2
+	}
+	target := path.Clean(fs.Arg(0))
+	if !path.IsAbs(target) {
+		r.error(errors.New("filesystem target must be an absolute guest path"))
+		return 2
+	}
+	client, err := r.client()
+	if err != nil {
+		r.error(err)
+		return 1
+	}
+	defer func() { _ = client.Close() }()
+	id, err := findExecSandbox(ctx, client, *sandboxName)
+	if err != nil {
+		r.error(err)
+		return 1
+	}
+	sb, err := client.Sandboxes().Get(ctx, id)
+	if err != nil {
+		r.error(err)
+		return 1
+	}
+	for _, workspace := range sb.Workspaces {
+		root := path.Clean(workspace.Path)
+		if target != root && !strings.HasPrefix(target, root+"/") {
+			continue
+		}
+		if !*write {
+			_, _ = fmt.Fprintf(r.Out, "allowed: workspace %s (read)\n", root)
+			return 0
+		}
+		if !workspace.ReadOnly {
+			_, _ = fmt.Fprintf(r.Out, "allowed: workspace %s (read-write)\n", root)
+			return 0
+		}
+		_, _ = fmt.Fprintf(r.Out, "denied: workspace %s is read-only\n", root)
+		return 1
+	}
+	_, _ = fmt.Fprintln(r.Out, "denied: path is outside every writable workspace")
+	return 1
 }
 
 func policyRulesFrom(scope string, allow, deny []sdk.NetworkRule) []policyRuleOutput {
@@ -580,6 +664,7 @@ func policyRulesFrom(scope string, allow, deny []sdk.NetworkRule) []policyRuleOu
 	return out
 }
 
+//nolint:gocognit // one renderer covers both resource sections and three formats.
 func renderPolicyRules(out io.Writer, format string, rules []policyRuleOutput) error {
 	switch format {
 	case listFormatTable:
@@ -589,14 +674,36 @@ func renderPolicyRules(out io.Writer, format string, rules []policyRuleOutput) e
 		}
 		_, _ = fmt.Fprintln(out, "NETWORK")
 		tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-		_, _ = fmt.Fprintln(tw, "RULE ID\tSCOPE\tACTION\tPROTOCOL\tTARGET\tPORT")
+		printedNetwork := false
+		printedFilesystem := false
 		for i := range rules {
 			rule := rules[i]
-			target := rule.CIDR
-			if rule.Domain != "" {
-				target = rule.Domain
+			switch rule.ResourceType {
+			case "filesystem":
+				if !printedFilesystem {
+					if printedNetwork {
+						_, _ = fmt.Fprintln(tw)
+					}
+					_, _ = fmt.Fprintln(tw, "FILESYSTEM")
+					_, _ = fmt.Fprintln(tw, "RULE ID\tSCOPE\tACTION\tPATH\tACCESS")
+					printedFilesystem = true
+				}
+				_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", rule.RuleID, rule.Scope, rule.Action, rule.Path, rule.Access)
+			default:
+				if !printedNetwork {
+					if printedFilesystem {
+						_, _ = fmt.Fprintln(tw)
+					}
+					_, _ = fmt.Fprintln(tw, "NETWORK")
+					_, _ = fmt.Fprintln(tw, "RULE ID\tSCOPE\tACTION\tPROTOCOL\tTARGET\tPORT")
+					printedNetwork = true
+				}
+				target := rule.CIDR
+				if rule.Domain != "" {
+					target = rule.Domain
+				}
+				_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\n", rule.RuleID, rule.Scope, rule.Action, rule.Protocol, target, rule.Port)
 			}
-			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\n", rule.RuleID, rule.Scope, rule.Action, rule.Protocol, target, rule.Port)
 		}
 		return tw.Flush()
 	case listFormatYAML:
@@ -644,6 +751,8 @@ func evaluatePolicy(allow, deny []sdk.NetworkRule, protocol string, ip net.IP, p
 	return false, reasonDefaultDeny
 }
 
+const filesystemKeyword = "filesystem"
+
 const policyUsage = `Usage: ksbx policy COMMAND
 
 Commands:
@@ -657,6 +766,8 @@ Commands:
                                           global rules
   check SANDBOX IP PORT [PROTOCOL]        evaluate a request against stored rules
   check network [--sandbox NAME] TARGET   evaluate IPv4[:PORT], IPv6[:PORT], or URL
+  check filesystem --sandbox NAME [--write] PATH
+                                          evaluate a guest workspace path
   init allow-all|balanced|deny-all        set the global default profile
   profile [ls]                            show the global default and available profiles
 

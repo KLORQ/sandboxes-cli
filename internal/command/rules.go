@@ -107,7 +107,7 @@ func rulesFor(sb *sdk.Sandbox) (allow, deny []ruleOutput) {
 	convert := func(rules []sdk.NetworkRule) []ruleOutput {
 		out := make([]ruleOutput, 0, len(rules))
 		for i := range rules {
-			out = append(out, ruleOutput{RuleID: rules[i].RuleID, Scope: "sandbox", ResourceType: "network",
+			out = append(out, ruleOutput{RuleID: rules[i].RuleID, Scope: sandboxPrefix, ResourceType: "network",
 				Action: actionAllow, Provenance: "user", Protocol: rules[i].Protocol, CIDR: rules[i].CIDR,
 				Domain: rules[i].Domain, Port: rules[i].Port})
 		}
