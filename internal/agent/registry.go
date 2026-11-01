@@ -25,6 +25,7 @@ type Spec struct {
 	Image   string   `yaml:"image"`
 	Command []string `yaml:"command"`
 	Status  Status   `yaml:"status"`
+	Docker  bool     `yaml:"docker,omitempty"`
 	Notes   string   `yaml:"notes,omitempty"`
 }
 

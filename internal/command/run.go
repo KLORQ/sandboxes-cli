@@ -132,6 +132,9 @@ func (r *Runner) run(ctx context.Context, args []string) int {
 	if agent != "" && opts.image == "" {
 		opts.image = agentImage(agent)
 	}
+	if agent != "" && !opts.privileged && agentDocker(agent) {
+		opts.privileged = true
+	}
 	resources, err := prepareRunResources(opts)
 	if err != nil {
 		_, _ = fmt.Fprintf(r.Err, "ksbx run: %v\n", err)

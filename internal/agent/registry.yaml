@@ -10,10 +10,11 @@ agents:
     status: preview
     notes: image publish pending
   - name: codex
-    image: docker/sandbox-templates:codex-docker
+    image: ghcr.io/klorq/sandbox-codex:0.1
     command: ["codex"]
     status: preview
-    notes: official image; command contract not live-tested
+    docker: true
+    notes: flattened codex image; nested Docker profile auto-enabled
   - name: gemini
     image: docker/sandbox-templates:gemini-docker
     command: ["gemini"]

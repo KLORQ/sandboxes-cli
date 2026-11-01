@@ -665,6 +665,9 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	if agent != "" && *image == "" {
 		*image = agentImage(agent)
 	}
+	if agent != "" && !*privileged && agentDocker(agent) {
+		*privileged = true
+	}
 	cpuCount, err := validateCPUs(*cpus)
 	if err != nil {
 		return createOptions{}, false, err

@@ -25,6 +25,15 @@ func agentImage(name string) string {
 	return spec.Image
 }
 
+func agentDocker(name string) bool {
+	registry, err := agentRegistry()
+	if err != nil {
+		return false
+	}
+	spec, ok := registry.Lookup(name)
+	return ok && spec.Docker
+}
+
 func agentCommand(name string) string {
 	registry, err := agentRegistry()
 	if err != nil {

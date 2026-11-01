@@ -50,8 +50,11 @@ func TestRunKimiUsesAgentCommand(t *testing.T) {
 }
 
 func TestAgentRegistryPreviewAndUnsupported(t *testing.T) {
-	if agentImage("codex") != "docker/sandbox-templates:codex-docker" || agentCommand("codex") != "codex" {
+	if agentImage("codex") != "ghcr.io/klorq/sandbox-codex:0.1" || agentCommand("codex") != "codex" {
 		t.Fatalf("codex image=%q command=%q", agentImage("codex"), agentCommand("codex"))
+	}
+	if !agentDocker("codex") {
+		t.Fatal("codex must enable docker profile")
 	}
 	if err := validateRunAgent("codex"); err != nil {
 		t.Fatalf("preview codex rejected: %v", err)
