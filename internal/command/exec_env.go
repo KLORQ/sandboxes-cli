@@ -186,7 +186,7 @@ func envMap(entries []string) map[string]string {
 func withoutSecretRefs(entries []string) []string {
 	out := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if strings.Contains(entry, "${secret:") {
+		if strings.Contains(entry, "${secret:") || strings.Contains(entry, "${proxy:") {
 			continue
 		}
 		out = append(out, entry)
