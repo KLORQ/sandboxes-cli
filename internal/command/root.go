@@ -684,7 +684,7 @@ type createOptions struct {
 }
 
 func (r *Runner) create(ctx context.Context, args []string) int {
-	opts, help, err := parseCreateOptions(args)
+	opts, help, err := parseCreateOptions(ctx, args)
 	if help {
 		_, _ = fmt.Fprint(r.Out, createUsage)
 		return 0
@@ -854,7 +854,7 @@ func resolveCreateWorkspaces(workspaceFlags stringListFlag, paths []string) ([]s
 }
 
 //nolint:gocyclo,cyclop,funlen // create accepts the full documented flag matrix.
-func parseCreateOptions(args []string) (createOptions, bool, error) {
+func parseCreateOptions(ctx context.Context, args []string) (createOptions, bool, error) {
 	fs := flag.NewFlagSet("create", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	image := fs.String("image", "", "image reference")
@@ -906,7 +906,7 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	}
 	if *kitPath != "" {
 		kitPaths := []string(workspaceFlags)
-		if err := applyKit(*kitPath, &agent, &imageRef, profile, &kitPaths); err != nil {
+		if err := applyKit(ctx, *kitPath, &agent, &imageRef, profile, &kitPaths); err != nil {
 			return createOptions{}, false, err
 		}
 		workspaceFlags = kitPaths

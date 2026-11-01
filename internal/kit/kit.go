@@ -97,7 +97,9 @@ func (k Kit) Validate() error {
 		return errors.New("kit spec.policy_profile must be deny-all, balanced or sbx-compat")
 	}
 	if k.Spec.Workspace.Seed != "" {
-		return errors.New("kit workspace.seed is not implemented by the local runtime")
+		if err := validateSeed(k.Spec.Workspace.Seed); err != nil {
+			return err
+		}
 	}
 	if len(k.Spec.MCP.Allow) != 0 {
 		return errors.New("kit mcp.allow is not implemented by the local runtime")
@@ -108,6 +110,19 @@ func (k Kit) Validate() error {
 		}
 	}
 	return nil
+}
+
+func validateSeed(seed string) error {
+	if seed == "" || len(seed) > 2048 || strings.ContainsAny(seed, "\x00\r\n \t") || strings.HasPrefix(seed, "-") {
+		return errors.New("kit workspace.seed must be a single git URL")
+	}
+	if strings.HasPrefix(seed, "https://") || strings.HasPrefix(seed, "ssh://") {
+		return nil
+	}
+	if strings.HasPrefix(seed, "git@") && strings.Contains(seed, ":") {
+		return nil
+	}
+	return errors.New("kit workspace.seed must use https://, ssh:// or git@host:path")
 }
 
 // Paths returns mount paths with the conventional :ro suffix.
