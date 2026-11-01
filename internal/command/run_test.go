@@ -177,7 +177,7 @@ func TestRunReusesAndRestartsExistingSandbox(t *testing.T) {
 }
 
 func TestRunRejectsUnimplementedAndUnknownAgents(t *testing.T) {
-	for _, agent := range []string{"claude", "not-an-agent"} {
+	for _, agent := range []string{"cline", "not-an-agent"} {
 		called := false
 		runner := &Runner{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, NewClient: func(string) (sdk.Client, error) {
 			called = true

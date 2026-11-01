@@ -41,7 +41,7 @@ func TestCreateRejectsUnsupportedAgentBeforeConnecting(t *testing.T) {
 		called = true
 		return fakeClient{}, nil
 	}}
-	if code := runner.Run(context.Background(), []string{"create", "claude", "."}); code != 2 || called {
+	if code := runner.Run(context.Background(), []string{"create", "cline", "."}); code != 2 || called {
 		t.Fatalf("exit=%d client-called=%t", code, called)
 	}
 }

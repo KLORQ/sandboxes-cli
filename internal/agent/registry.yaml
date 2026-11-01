@@ -31,18 +31,36 @@ agents:
     detach_command: ["/bin/sh", "-c", "nohup /usr/local/bin/klorq-dsh-entrypoint >/tmp/klorq-dsh.log 2>&1 &"]
     notes: DeepSeek Harness web UI on guest port 8080, published on 127.0.0.1 by default
   - name: claude
-    status: unsupported
+    image: docker/sandbox-templates:claude-code-docker
+    command: ["claude", "--dangerously-skip-permissions"]
+    status: preview
+    notes: official Docker template; agent auth is not provisioned yet
   - name: cline
     status: unsupported
   - name: copilot
-    status: unsupported
+    image: docker/sandbox-templates:copilot-docker
+    command: ["copilot"]
+    status: preview
+    notes: official Docker template; agent auth is not provisioned yet
   - name: cursor
     status: unsupported
   - name: devin
-    status: unsupported
+    image: docker/sandbox-templates:devin-docker
+    command: ["devin"]
+    status: preview
+    notes: official Docker template; agent auth is not provisioned yet
   - name: docker-agent
-    status: unsupported
+    image: docker/sandbox-templates:docker-agent-docker
+    command: ["docker-agent"]
+    status: preview
+    notes: official Docker template; agent auth is not provisioned yet
   - name: droid
-    status: unsupported
+    image: docker/sandbox-templates:droid-docker
+    command: ["droid"]
+    status: preview
+    notes: official Docker template; agent auth is not provisioned yet
   - name: kiro
-    status: unsupported
+    image: docker/sandbox-templates:kiro-docker
+    command: ["kiro"]
+    status: preview
+    notes: official Docker template; agent auth is not provisioned yet
