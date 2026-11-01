@@ -180,13 +180,13 @@ func envMap(entries []string) map[string]string {
 	return out
 }
 
-// withoutSecretRefs removes host-vault references from sandbox base env. They
-// are resolved by the daemon only for the exec session, so a literal sentinel
-// cannot be baked into the VM configuration or snapshots.
-func withoutSecretRefs(entries []string) []string {
+// withoutInjectedSecrets removes direct host-vault references from persistent
+// sandbox env. Proxy references contain no secret and enable the per-VM
+// channel at create time; the daemon removes them before runtime configuration.
+func withoutInjectedSecrets(entries []string) []string {
 	out := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if strings.Contains(entry, "${secret:") || strings.Contains(entry, "${proxy:") {
+		if strings.Contains(entry, "${secret:") {
 			continue
 		}
 		out = append(out, entry)

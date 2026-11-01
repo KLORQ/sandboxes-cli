@@ -408,6 +408,23 @@ func TestRunBakesEnvOnCreate(t *testing.T) {
 	}
 }
 
+func TestRunPassesProxyReferenceOnlyAsNonSecretCreateMetadata(t *testing.T) {
+	workspace := t.TempDir()
+	sandboxes := &runSandbox{}
+	sessions := &fakeSessions{}
+	runner, out, stderr := runTestRunner(t, runClient{sandboxes: sandboxes, sessions: sessions}, "")
+	proxyRef := "${proxy:openai}"
+	if code := runner.Run(context.Background(), []string{"run", "--name", "proxy-run", "-e", "OPENAI_API_KEY=" + proxyRef, "shell", workspace}); code != 0 {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, out.String(), stderr.String())
+	}
+	if sandboxes.created.Env["OPENAI_API_KEY"] != proxyRef {
+		t.Fatalf("create request omitted proxy setup reference: %v", sandboxes.created.Env)
+	}
+	if len(sessions.req.Env) != 1 || sessions.req.Env[0] != "OPENAI_API_KEY="+proxyRef {
+		t.Fatalf("exec environment=%v", sessions.req.Env)
+	}
+}
+
 func TestRunDenyWriteAddsReadOnlyWorkspace(t *testing.T) {
 	workspace := t.TempDir()
 	sandboxes := &runSandbox{}

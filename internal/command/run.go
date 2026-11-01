@@ -226,7 +226,7 @@ func (r *Runner) runAttached(ctx context.Context, client sdk.Client, opts runOpt
 	if opts.detach {
 		if argv := agentDetachCommand(agent); len(argv) > 0 {
 			code, err := sdk.ExecService(client).Exec(ctx, sdk.ExecRequest{
-				SandboxID: sandbox.ID, Argv: argv, Stdout: r.Out, Stderr: r.Err,
+				SandboxID: sandbox.ID, Argv: argv, Env: resources.env, Stdout: r.Out, Stderr: r.Err,
 			})
 			if err != nil {
 				r.error(fmt.Errorf("start detached agent: %w", err))
@@ -791,7 +791,7 @@ func (r *Runner) createRunSandbox(ctx context.Context, client sdk.Client, opts r
 		MemoryMiB:     resources.memory,
 		PolicyProfile: resources.profile,
 		Privileged:    opts.privileged,
-		Env:           envMap(withoutSecretRefs(resources.env)),
+		Env:           envMap(withoutInjectedSecrets(resources.env)),
 	})
 	if err != nil {
 		return r.recoverRunCreate(ctx, client, opts, err)
