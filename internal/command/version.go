@@ -105,14 +105,14 @@ func (r *Runner) version(ctx context.Context, args []string) int {
 func (r *Runner) serverVersion(ctx context.Context) versionServerOutput {
 	client, err := r.client()
 	if err != nil {
-		return versionServerOutput{State: "unavailable", Error: err.Error()}
+		return versionServerOutput{State: stateUnavailable, Error: err.Error()}
 	}
 	defer func() { _ = client.Close() }()
 	checkCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	info, err := sdk.Version(client).Get(checkCtx)
 	if err != nil {
-		return versionServerOutput{State: "unavailable", Error: err.Error()}
+		return versionServerOutput{State: stateUnavailable, Error: err.Error()}
 	}
 	return versionServerOutput{State: "running", Version: "v" + info.Version, APIVersion: info.APIVersion}
 }

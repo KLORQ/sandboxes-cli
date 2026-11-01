@@ -61,7 +61,7 @@ func (r *Runner) policy(ctx context.Context, args []string) int {
 		return r.policyInit(ctx, args[1:])
 	case "profile":
 		return r.policyProfile(ctx, args[1:])
-	case "reset", "refresh", "log", "approval":
+	case commandReset, "refresh", "log", "approval":
 		_, _ = fmt.Fprintf(r.Err, "ksbx policy %s: this policy operation is not implemented\n", args[0])
 		return 1
 	case helpCommand, helpShort, helpFlag:
