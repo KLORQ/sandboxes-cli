@@ -1,0 +1,27 @@
+name: codex-image
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Build flattened Codex image
+        run: |
+          set -eux
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull --platform linux/arm64 docker/sandbox-templates:codex-docker
+          cid=$(docker create --platform linux/arm64 docker/sandbox-templates:codex-docker)
+          docker export "$cid" -o rootfs.tar
+          docker rm "$cid"
+          tar --format=ustar --transform='s,^,dev/,' -rf rootfs.tar -C /dev null zero random urandom
+          docker import --platform linux/arm64 \
+            --change 'ENV PATH=/home/agent/.local/bin:/usr/local/share/npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
+            --change 'ENV BASH_ENV=/etc/sandbox-persistent.sh' \
+            --change 'WORKDIR /home/agent/workspace' --change 'USER agent' \
+            --change 'LABEL com.docker.sandboxes.start-docker=true' \
+            --change 'ENTRYPOINT ["tini","--"]' --change 'CMD ["codex"]' \
+            rootfs.tar ghcr.io/klorq/sandbox-codex:0.1
+          docker push ghcr.io/klorq/sandbox-codex:0.1
