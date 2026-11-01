@@ -224,3 +224,40 @@ func TestEvaluatePolicyName(t *testing.T) {
 		}
 	}
 }
+
+func TestFilesystemPolicyOutputAndCheck(t *testing.T) {
+	sandbox := &lifecycleSandbox{items: []sdk.Sandbox{{
+		ID: "sb-1", Name: "dev",
+		Workspaces: []sdk.Workspace{
+			{Path: "/work"},
+			{Path: "/readonly", ReadOnly: true},
+		},
+	}}}
+	var out bytes.Buffer
+	runner := &Runner{Out: &out, Err: &out, NewClient: func(string) (sdk.Client, error) { return fakeClient{sandbox: sandbox}, nil }}
+	if code := runner.Run(context.Background(), []string{"policy", "ls", "dev", "--json"}); code != 0 {
+		t.Fatalf("exit=%d output=%q", code, out.String())
+	}
+	var rules []policyRuleOutput
+	if err := json.Unmarshal(out.Bytes(), &rules); err != nil || len(rules) != 4 {
+		t.Fatalf("rules=%+v err=%v", rules, err)
+	}
+	if rules[0].ResourceType != "filesystem" || rules[0].Path != "/work" || rules[0].Access != "read" {
+		t.Fatalf("first rule=%+v", rules[0])
+	}
+	for _, tc := range []struct {
+		args []string
+		code int
+		want string
+	}{
+		{[]string{"policy", "check", "filesystem", "--sandbox", "dev", "/work/a"}, 0, "workspace /work (read)"},
+		{[]string{"policy", "check", "filesystem", "--sandbox", "dev", "--write", "/work/a"}, 0, "read-write"},
+		{[]string{"policy", "check", "filesystem", "--sandbox", "dev", "--write", "/readonly/a"}, 1, "read-only"},
+		{[]string{"policy", "check", "filesystem", "--sandbox", "dev", "/outside"}, 1, "outside"},
+	} {
+		out.Reset()
+		if code := runner.Run(context.Background(), tc.args); code != tc.code || !strings.Contains(out.String(), tc.want) {
+			t.Fatalf("%v exit=%d output=%q want %q", tc.args, code, out.String(), tc.want)
+		}
+	}
+}
