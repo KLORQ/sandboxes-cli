@@ -135,14 +135,13 @@ func (r *Runner) policyMutateGlobal(ctx context.Context, action, value string) i
 	return 0
 }
 
-//nolint:gocognit,gocyclo,cyclop,nestif,funlen // command parsing plus policy evaluation are one user-facing transaction.
 func (r *Runner) policyCheckNetwork(ctx context.Context, args []string) int {
 	sandboxName, rest, code := r.policyNetworkScope("policy check network", args)
 	if code >= 0 {
 		return code
 	}
 	if len(rest) != 1 {
-		_, _ = fmt.Fprintln(r.Err, "usage: ksbx policy check network [--sandbox NAME] TARGET (IPv4[:PORT], IPv6[:PORT], or http(s)://URL)")
+		_, _ = fmt.Fprintln(r.Err, "usage: ksbx policy check network [--sandbox NAME] TARGET (IPv4[:PORT], IPv6[:PORT], domain[:PORT], or http(s)://URL)")
 		return 2
 	}
 	host, port, err := parsePolicyTarget(rest[0])
@@ -150,39 +149,17 @@ func (r *Runner) policyCheckNetwork(ctx context.Context, args []string) int {
 		r.error(err)
 		return 2
 	}
+	protocol := tcpProtocol
+	address := ""
+	domain := ""
 	if host == nil {
-		name, namePort, err := parsePolicyNameTarget(rest[0])
+		domain, port, err = parsePolicyNameTarget(rest[0])
 		if err != nil {
 			r.error(err)
 			return 2
 		}
-		client, err := r.client()
-		if err != nil {
-			r.error(err)
-			return 1
-		}
-		defer func() { _ = client.Close() }()
-		var allow, deny []sdk.NetworkRule
-		if sandboxName != "" {
-			id, err := findExecSandbox(ctx, client, sandboxName)
-			if err != nil {
-				r.error(err)
-				return 1
-			}
-			sb, err := client.Sandboxes().Get(ctx, id)
-			if err != nil {
-				r.error(err)
-				return 1
-			}
-			allow, deny = sb.Allow, sb.Deny
-		}
-		allowed, reason := evaluatePolicyName(allow, deny, tcpProtocol, name, namePort)
-		if allowed {
-			_, _ = fmt.Fprintf(r.Out, "allowed: %s\n", reason)
-			return 0
-		}
-		_, _ = fmt.Fprintf(r.Out, "denied: %s\n", reason)
-		return 1
+	} else {
+		address = host.String()
 	}
 	client, err := r.client()
 	if err != nil {
@@ -190,30 +167,24 @@ func (r *Runner) policyCheckNetwork(ctx context.Context, args []string) int {
 		return 1
 	}
 	defer func() { _ = client.Close() }()
-	var allow, deny []sdk.NetworkRule
+	id := ""
 	if sandboxName != "" {
-		id, err := findExecSandbox(ctx, client, sandboxName)
+		id, err = findExecSandbox(ctx, client, sandboxName)
 		if err != nil {
 			r.error(err)
 			return 1
 		}
-		sb, err := client.Sandboxes().Get(ctx, id)
-		if err != nil {
-			r.error(err)
-			return 1
-		}
-		allow, deny = sb.Allow, sb.Deny
 	}
-	if host.To4() == nil {
-		r.error(errors.New("IPv6 policy targets are not implemented by the local runtime policy model"))
-		return 2
+	decision, err := sdk.Policies(client).Check(ctx, id, protocol, address, domain, port)
+	if err != nil {
+		r.error(err)
+		return 1
 	}
-	allowed, reason := evaluatePolicyTarget(allow, deny, tcpProtocol, host, port)
-	if allowed {
-		_, _ = fmt.Fprintf(r.Out, "allowed: %s\n", reason)
+	if decision.Allowed {
+		_, _ = fmt.Fprintf(r.Out, "allowed: %s\n", decision.Reason)
 		return 0
 	}
-	_, _ = fmt.Fprintf(r.Out, "denied: %s\n", reason)
+	_, _ = fmt.Fprintf(r.Out, "denied: %s\n", decision.Reason)
 	return 1
 }
 
