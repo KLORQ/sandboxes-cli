@@ -32,6 +32,59 @@ func TestParsePublishSpec(t *testing.T) {
 	}
 }
 
+func TestParsePortSpecHostIPAndIPv6(t *testing.T) {
+	for _, tc := range []struct {
+		value  string
+		hostIP string
+		host   uint16
+		guest  uint16
+		proto  string
+		ok     bool
+	}{
+		{value: "127.0.0.1:8080:3000/tcp4", hostIP: "127.0.0.1", host: 8080, guest: 3000, proto: "tcp", ok: true},
+		{value: "[::1]:8080:3000/tcp6", hostIP: "::1", host: 8080, guest: 3000, proto: "tcp", ok: true},
+		{value: "[::1]:3000/udp6", hostIP: "::1", guest: 3000, proto: "udp", ok: true},
+		{value: "8080/tcp6", hostIP: "::1", guest: 8080, proto: "tcp", ok: true},
+		{value: "::1:8080:3000/tcp6", ok: false},
+		{value: "192.0.2.10:8080:3000", ok: false},
+		{value: "127.0.0.1:8080:3000/tcp6", ok: false},
+		{value: "[::1]:8080:3000/tcp4", ok: false},
+	} {
+		port, err := parsePortSpec(tc.value, false)
+		if (err == nil) != tc.ok {
+			t.Fatalf("parsePortSpec(%q)=%+v,%v", tc.value, port, err)
+		}
+		if !tc.ok {
+			continue
+		}
+		if port.HostIP != tc.hostIP || port.Host != tc.host || port.Guest != tc.guest || port.Protocol != tc.proto {
+			t.Fatalf("parsePortSpec(%q)=%+v", tc.value, port)
+		}
+	}
+}
+
+func TestPortsForDisplaysIPv6Family(t *testing.T) {
+	ports := portsFor(&sdk.Sandbox{Ports: []sdk.Port{{Host: 8080, Guest: 3000, Protocol: "tcp", HostIP: "::1"}}})
+	if len(ports) != 1 || ports[0].HostIP != "::1" || ports[0].Protocol != "tcp6" {
+		t.Fatalf("ports=%+v", ports)
+	}
+}
+
+func TestApplyPortChangesSeparatesHostIPAndProtocol(t *testing.T) {
+	existing := []sdk.Port{{Host: 8080, Guest: 3000, Protocol: "tcp", HostIP: "127.0.0.1"}}
+	added, err := applyPortChanges(existing, []sdk.Port{{Host: 8080, Guest: 3001, Protocol: "tcp", HostIP: "::1"}}, nil)
+	if err != nil || len(added) != 2 {
+		t.Fatalf("added=%+v err=%v", added, err)
+	}
+	if _, err := applyPortChanges(added, []sdk.Port{{Host: 8080, Guest: 3002, Protocol: "tcp", HostIP: "::1"}}, nil); err == nil {
+		t.Fatal("duplicate IPv6 host port accepted")
+	}
+	removed, err := applyPortChanges(added, nil, []sdk.Port{{Host: 8080, Guest: 3001, Protocol: "tcp", HostIP: "::1"}})
+	if err != nil || len(removed) != 1 || portHostIP(removed[0]) != "127.0.0.1" {
+		t.Fatalf("removed=%+v err=%v", removed, err)
+	}
+}
+
 func TestCreatePassesPublishedPorts(t *testing.T) {
 	sandbox := &recordingCreateSandbox{}
 	var out bytes.Buffer
