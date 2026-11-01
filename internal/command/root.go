@@ -972,47 +972,64 @@ func (r *Runner) remove(ctx context.Context, args []string) int {
 		return 1
 	}
 	defer func() { _ = client.Close() }()
-	targets := opts.targets
-	if opts.all {
-		targets, err = allSandboxIDs(ctx, client)
-		if err != nil {
-			r.error(err)
-			return 1
-		}
-	}
-	if len(targets) == 0 {
-		if err := renderOperations(r.Out, opts.format, nil); err != nil {
-			r.error(err)
-			return 1
-		}
-		return 0
-	}
-	if !opts.force {
-		confirmed, err := r.confirmRemoval(len(targets))
-		if err != nil {
-			r.error(err)
-			return 1
-		}
-		if !confirmed {
-			_, _ = fmt.Fprintln(r.Out, "Removal canceled")
-			return 0
-		}
+	targets, code := r.prepareRemoval(ctx, client, opts)
+	if code >= 0 {
+		return code
 	}
 	operations, removed, failed := r.deleteSandboxes(ctx, client, targets)
-	if opts.format != listFormatTable {
-		if err := renderOperations(r.Out, opts.format, operations); err != nil {
-			r.error(err)
-			return 1
-		}
-	} else {
-		for _, name := range removed {
-			_, _ = fmt.Fprintf(r.Out, "Removed sandbox %s\n", name)
-		}
+	if code := r.renderRemoval(opts.format, operations, removed); code >= 0 {
+		return code
 	}
 	if failed {
 		return 1
 	}
 	return 0
+}
+
+func (r *Runner) prepareRemoval(ctx context.Context, client sdk.Client, opts removeOptions) ([]string, int) {
+	targets := opts.targets
+	if opts.all {
+		var err error
+		targets, err = allSandboxIDs(ctx, client)
+		if err != nil {
+			r.error(err)
+			return nil, 1
+		}
+	}
+	if len(targets) == 0 {
+		if err := renderOperations(r.Out, opts.format, nil); err != nil {
+			r.error(err)
+			return nil, 1
+		}
+		return nil, 0
+	}
+	if opts.force {
+		return targets, -1
+	}
+	confirmed, err := r.confirmRemoval(len(targets))
+	if err != nil {
+		r.error(err)
+		return nil, 1
+	}
+	if !confirmed {
+		_, _ = fmt.Fprintln(r.Out, "Removal canceled")
+		return nil, 0
+	}
+	return targets, -1
+}
+
+func (r *Runner) renderRemoval(format string, operations []*sdk.Operation, removed []string) int {
+	if format != listFormatTable {
+		if err := renderOperations(r.Out, format, operations); err != nil {
+			r.error(err)
+			return 1
+		}
+		return -1
+	}
+	for _, name := range removed {
+		_, _ = fmt.Fprintf(r.Out, "Removed sandbox %s\n", name)
+	}
+	return -1
 }
 
 func parseRemoveOptions(args []string) (removeOptions, bool, error) {
