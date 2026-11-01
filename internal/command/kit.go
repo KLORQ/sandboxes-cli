@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -137,7 +138,8 @@ func (r *Runner) kitList(args []string) int {
 	return 0
 }
 
-func applyKit(path string, agent, image, profile *string, paths *[]string) error {
+//nolint:gocyclo,cyclop // kit merge validates each optional field explicitly.
+func applyKit(ctx context.Context, path string, agent, image, profile *string, paths *[]string) error {
 	doc, err := kit.Load(path)
 	if err != nil {
 		return err
@@ -159,6 +161,13 @@ func applyKit(path string, agent, image, profile *string, paths *[]string) error
 	}
 	if *profile == "" {
 		*profile = doc.Spec.PolicyProfile
+	}
+	if seed := doc.Spec.Workspace.Seed; seed != "" {
+		resolved, err := kit.ResolveSeed(ctx, seed, kit.SeedCacheRoot())
+		if err != nil {
+			return err
+		}
+		*paths = append([]string{resolved}, *paths...)
 	}
 	*paths = append(*paths, doc.Paths()...)
 	return nil

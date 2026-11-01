@@ -89,8 +89,9 @@ filesystem rules are not implemented. TCP and UDP are supported with explicit
 or ephemeral host ports; an occupied host port is rejected at create and
 dynamic updates reconcile gvproxy's forwarders without restarting the VM.
 Loopback IPv4/IPv6 bindings are supported; public bindings are rejected.
-Local kits (`--kit FILE`) can set agent, image, profile and mounts; workspace
-seeding, signatures and MCP allowlists fail closed. Reusing a `--name` with an
+Local kits (`--kit FILE`) can set agent, image, profile and mounts. A
+`workspace.seed` git URL is cloned once into the host cache with hooks disabled
+and mounted as the workspace; signatures and MCP allowlists still fail closed. Reusing a `--name` with an
 explicitly different workspace set/mode fails instead of silently ignoring the
 mounts.
 `ksbx exec -i/-t/-it` supports stdin, separate stdout/stderr, terminal size and

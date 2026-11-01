@@ -160,7 +160,7 @@ func (r *Runner) run(ctx context.Context, args []string) int {
 		return 2
 	}
 	if opts.kit != "" {
-		if err := applyKit(opts.kit, &agent, &opts.image, &opts.profile, &workspacePaths); err != nil {
+		if err := applyKit(ctx, opts.kit, &agent, &opts.image, &opts.profile, &workspacePaths); err != nil {
 			_, _ = fmt.Fprintf(r.Err, "ksbx run: %v\n", err)
 			return 2
 		}
