@@ -41,6 +41,7 @@ Flags:
   --image REF                 image override
   --cpus N                    CPU count for a new sandbox
   --memory SIZE               memory limit (binary units)
+  --docker                    run the dedicated Docker profile
   --idempotency-key KEY       idempotency key
   -e, --env KEY=VALUE         environment for every process (repeatable)
   --env-file FILE             read environment overrides from a file (repeatable)
@@ -553,6 +554,7 @@ type createOptions struct {
 	memoryMiB      uint32
 	env            []string
 	profile        string
+	privileged     bool
 }
 
 func (r *Runner) create(ctx context.Context, args []string) int {
@@ -592,6 +594,7 @@ func (r *Runner) create(ctx context.Context, args []string) int {
 		CPUs:           opts.cpus,
 		MemoryMiB:      opts.memoryMiB,
 		PolicyProfile:  opts.profile,
+		Privileged:     opts.privileged,
 		Env:            envMap(opts.env),
 	})
 	if err != nil {
@@ -648,6 +651,7 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	cpus := fs.Uint("cpus", 0, "CPUs (0 selects the daemon default)")
 	memory := fs.String("memory", "", "memory limit such as 512m or 2g (empty selects the daemon default)")
 	profile := fs.String("policy-profile", "", "egress profile: deny-all, balanced or sbx-compat")
+	privileged := fs.Bool("docker", false, "run the dedicated Docker profile")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return createOptions{}, true, nil
@@ -688,7 +692,7 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	return createOptions{
 		name: name, agent: agent, image: *image, workspace: workspace, idempotencyKey: *idempotency,
 		workspaces: workspaces, ports: ports, allow: allow, deny: deny,
-		cpus: cpuCount, memoryMiB: memoryMiB, env: env, profile: *profile,
+		cpus: cpuCount, memoryMiB: memoryMiB, env: env, profile: *profile, privileged: *privileged,
 	}, false, nil
 }
 

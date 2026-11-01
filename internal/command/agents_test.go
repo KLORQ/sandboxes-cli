@@ -66,3 +66,15 @@ func TestAgentRegistryPreviewAndUnsupported(t *testing.T) {
 		t.Fatal("isAgentName registry mismatch")
 	}
 }
+
+func TestPrivilegedPlumbing(t *testing.T) {
+	sandbox := &recordingCreateSandbox{}
+	var out bytes.Buffer
+	runner := &Runner{Out: &out, Err: &out, NewClient: func(string) (sdk.Client, error) { return fakeClient{sandbox: sandbox}, nil }}
+	if code := runner.Run(context.Background(), []string{"create", "--docker", "shell"}); code != 0 {
+		t.Fatalf("create exit=%d output=%q", code, out.String())
+	}
+	if !sandbox.request.Privileged {
+		t.Fatal("create did not pass privileged")
+	}
+}
