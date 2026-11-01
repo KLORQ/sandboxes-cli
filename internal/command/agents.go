@@ -25,6 +25,15 @@ func agentImage(name string) string {
 	return spec.Image
 }
 
+func agentDocker(name string) bool {
+	registry, err := agentRegistry()
+	if err != nil {
+		return false
+	}
+	spec, ok := registry.Lookup(name)
+	return ok && spec.Docker
+}
+
 func agentCommand(name string) string {
 	registry, err := agentRegistry()
 	if err != nil {
@@ -62,4 +71,16 @@ func validateAgent(name string) error {
 		return fmt.Errorf("agent %q is not implemented yet; status %s", name, spec.Status)
 	}
 	return nil
+}
+
+func applyAgentDefaults(name string, image *string, privileged *bool) {
+	if name == "" {
+		return
+	}
+	if *image == "" {
+		*image = agentImage(name)
+	}
+	if !*privileged && agentDocker(name) {
+		*privileged = true
+	}
 }
