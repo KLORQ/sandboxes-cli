@@ -72,3 +72,15 @@ func validateAgent(name string) error {
 	}
 	return nil
 }
+
+func applyAgentDefaults(name string, image *string, privileged *bool) {
+	if name == "" {
+		return
+	}
+	if *image == "" {
+		*image = agentImage(name)
+	}
+	if !*privileged && agentDocker(name) {
+		*privileged = true
+	}
+}
