@@ -29,6 +29,8 @@ const (
 	actionDeny        = "deny"
 	commandGet        = "get"
 	commandInspect    = "inspect"
+	commandReset      = "reset"
+	stateUnavailable  = "unavailable"
 	commandList       = "list"
 	commandSet        = "set"
 	schemeHTTPS       = "https"
@@ -164,7 +166,7 @@ func commandHintPath(cmdPath string) string {
 	return cmdPath + " "
 }
 
-//nolint:cyclop // one dispatch switch is the command router.
+//nolint:cyclop,gocyclo // one dispatch switch is the command router.
 func (r *Runner) runAuxiliaryCommand(ctx context.Context, name string, args []string) (int, bool) {
 	switch name {
 	case "run":
@@ -193,6 +195,10 @@ func (r *Runner) runAuxiliaryCommand(ctx context.Context, name string, args []st
 		return r.settings(args), true
 	case "kit":
 		return r.kit(args), true
+	case "daemon":
+		return r.daemon(args), true
+	case "volume", "template", "env", "mcp", "tui", "move", "ttl", commandReset, "setup", "skills":
+		return r.unsupportedFamily(name), true
 	case completionCommand:
 		return r.completion(args), true
 	default:
@@ -458,6 +464,23 @@ func reorderFlagArgs(args []string, valueFlags map[string]bool) []string {
 		}
 	}
 	return append(flags, positionals...)
+}
+
+func (r *Runner) unsupportedFamily(name string) int {
+	reasons := map[string]string{
+		"volume":   "persistent volumes are cloud-only in this build",
+		"template": "template management is not implemented; use --image or a kit",
+		"env":      "declarative sbxenv files are not implemented",
+		"mcp":      "the MCP gateway is not implemented",
+		"tui":      "the terminal dashboard is not implemented",
+		"move":     "cloud move is unavailable without a tenant",
+		"ttl":      "cloud TTL is unavailable without a tenant",
+		"reset":    "destructive reset is not implemented; use ksbx rm/prune",
+		"setup":    "host setup is not implemented",
+		"skills":   "skills management is not implemented",
+	}
+	_, _ = fmt.Fprintf(r.Err, "ksbx %s: unsupported: %s\n", name, reasons[name])
+	return 1
 }
 
 func hasFlag(args []string, name string) bool {
@@ -1247,7 +1270,7 @@ func (r *Runner) printSandbox(sb *sdk.Sandbox) {
 
 func (r *Runner) usage() {
 	_, _ = fmt.Fprintln(r.Out, "usage: ksbx [--socket PATH] <command>")
-	_, _ = fmt.Fprintln(r.Out, "commands: run, attach, create, exec, cp, ls, get, ports, policy, settings, start, stop, rm, prune, diagnose, wait, login, logout, secret, completion, version, help")
+	_, _ = fmt.Fprintln(r.Out, "commands: run, attach, create, exec, cp, ls, get, ports, policy, settings, kit, daemon, start, stop, rm, prune, diagnose, wait, login, logout, secret, completion, version, help")
 	_, _ = fmt.Fprintln(r.Out, "global flags: --socket PATH  daemon unix socket")
 	_, _ = fmt.Fprintln(r.Out, `Use "ksbx <command> --help" for command details.`)
 }
