@@ -20,7 +20,8 @@ type runClient struct {
 	sessions  *fakeSessions
 }
 
-func (c runClient) Sandboxes() sdk.SandboxService { return c.sandboxes }
+func (c runClient) Sandboxes() sdk.SandboxService    { return c.sandboxes }
+func (c runClient) PolicyService() sdk.PolicyService { return fakePolicyCheck{sandboxes: c.sandboxes} }
 func (c runClient) SessionExecutor() sdk.SessionExecutor {
 	return c.sessions
 }

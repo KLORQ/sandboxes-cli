@@ -119,6 +119,10 @@ func (p *policyUpdateClient) UpdatePolicy(_ context.Context, id string, allow, d
 	return &sdk.Sandbox{ID: "sb-1", Name: "dev", Allow: allow, Deny: deny}, nil
 }
 
+func (p *policyUpdateClient) Check(ctx context.Context, id, protocol, address, domain string, port uint16) (sdk.PolicyDecision, error) {
+	return fakePolicyCheck{sandboxes: p.fakeClient.sandbox}.Check(ctx, id, protocol, address, domain, port)
+}
+
 func (p *policyUpdateClient) GetGlobalPolicy(context.Context) ([]sdk.NetworkRule, []sdk.NetworkRule, error) {
 	return nil, nil, nil
 }
@@ -276,3 +280,48 @@ func TestFilesystemCheckUsesMostSpecificWorkspace(t *testing.T) {
 		t.Fatalf("output=%q", out.String())
 	}
 }
+
+type fakePolicyCheck struct{ sandboxes sdk.SandboxService }
+
+func (f fakePolicyCheck) UpdatePolicy(context.Context, string, []sdk.NetworkRule, []sdk.NetworkRule) (*sdk.Sandbox, error) {
+	return nil, errors.New("not implemented")
+}
+func (f fakePolicyCheck) MutatePolicy(context.Context, string, string, sdk.NetworkRule) (*sdk.Sandbox, error) {
+	return nil, errors.New("not implemented")
+}
+func (f fakePolicyCheck) GetPolicyProfile(context.Context) (string, error)             { return "", nil }
+func (f fakePolicyCheck) SetPolicyProfile(_ context.Context, p string) (string, error) { return p, nil }
+func (f fakePolicyCheck) GetGlobalPolicy(context.Context) ([]sdk.NetworkRule, []sdk.NetworkRule, error) {
+	return nil, nil, nil
+}
+func (f fakePolicyCheck) MutateGlobalPolicy(context.Context, string, sdk.NetworkRule) ([]sdk.NetworkRule, []sdk.NetworkRule, error) {
+	return nil, nil, &sdk.Error{Code: "unsupported", Message: "global policy is not supported by this client"}
+}
+func (f fakePolicyCheck) Check(ctx context.Context, id, protocol, address, domain string, port uint16) (sdk.PolicyDecision, error) {
+	if id == "" {
+		return sdk.PolicyDecision{Allowed: false, Reason: "default deny"}, nil
+	}
+	page, err := f.sandboxes.List(ctx, sdk.ListOptions{})
+	if err != nil {
+		return sdk.PolicyDecision{}, err
+	}
+	for i := range page.Items {
+		item := &page.Items[i]
+		if id != "" && item.ID != id && item.Name != id {
+			continue
+		}
+		if domain != "" {
+			allowed, reason := evaluatePolicyName(item.Allow, item.Deny, protocol, domain, port)
+			return sdk.PolicyDecision{Allowed: allowed, Reason: reason}, nil
+		}
+		ip := net.ParseIP(address)
+		if ip == nil {
+			return sdk.PolicyDecision{}, errors.New("invalid address")
+		}
+		allowed, reason := evaluatePolicyTarget(item.Allow, item.Deny, protocol, ip, port)
+		return sdk.PolicyDecision{Allowed: allowed, Reason: reason}, nil
+	}
+	return sdk.PolicyDecision{Allowed: false, Reason: "default deny"}, nil
+}
+
+func (f fakeClient) PolicyService() sdk.PolicyService { return fakePolicyCheck{sandboxes: f.sandbox} }
