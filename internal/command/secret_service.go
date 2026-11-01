@@ -81,11 +81,11 @@ func (r *Runner) serviceSecretSet(ctx context.Context, args []string) int {
 		r.error(err)
 		return 1
 	}
-	sandbox := summary.SandboxName
-	if sandbox == "" {
-		sandbox = ""
+	displayScope := string(summary.Scope)
+	if summary.SandboxName != "" {
+		displayScope += " " + summary.SandboxName
 	}
-	_, _ = fmt.Fprintf(r.Out, "Stored %s secret for %s (%s) in host keychain; it is not injected into sandboxes yet\n", summary.Service, summary.Scope, sandbox)
+	_, _ = fmt.Fprintf(r.Out, "Stored %s secret (%s) in host keychain; it is not injected into sandboxes yet\n", summary.Service, displayScope)
 	return 0
 }
 
