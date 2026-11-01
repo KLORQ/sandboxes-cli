@@ -261,3 +261,18 @@ func TestFilesystemPolicyOutputAndCheck(t *testing.T) {
 		}
 	}
 }
+
+func TestFilesystemCheckUsesMostSpecificWorkspace(t *testing.T) {
+	sandbox := &lifecycleSandbox{items: []sdk.Sandbox{{
+		ID: "sb-1", Name: "dev",
+		Workspaces: []sdk.Workspace{{Path: "/work"}, {Path: "/work/protected", ReadOnly: true}},
+	}}}
+	var out bytes.Buffer
+	runner := &Runner{Out: &out, Err: &out, NewClient: func(string) (sdk.Client, error) { return fakeClient{sandbox: sandbox}, nil }}
+	if code := runner.Run(context.Background(), []string{"policy", "check", "filesystem", "--sandbox", "dev", "--write", "/work/protected/file"}); code != 1 {
+		t.Fatalf("exit=%d output=%q", code, out.String())
+	}
+	if !strings.Contains(out.String(), "/work/protected") || !strings.Contains(out.String(), "read-only") {
+		t.Fatalf("output=%q", out.String())
+	}
+}

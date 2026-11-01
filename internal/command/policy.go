@@ -591,6 +591,8 @@ func filesystemRuleID(targetPath, access string) string {
 
 // policyCheckFilesystem evaluates the workspace mount policy. The guest rootfs
 // is read-only, so only declared workspaces can be written.
+//
+//nolint:gocyclo,cyclop // one command parses flags, selects the most specific workspace and reports.
 func (r *Runner) policyCheckFilesystem(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("policy check filesystem", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -627,23 +629,31 @@ func (r *Runner) policyCheckFilesystem(ctx context.Context, args []string) int {
 		r.error(err)
 		return 1
 	}
-	for _, workspace := range sb.Workspaces {
-		root := path.Clean(workspace.Path)
+	var selected *sdk.Workspace
+	selectedRoot := ""
+	for i := range sb.Workspaces {
+		root := path.Clean(sb.Workspaces[i].Path)
 		if target != root && !strings.HasPrefix(target, root+"/") {
 			continue
 		}
-		if !*write {
-			_, _ = fmt.Fprintf(r.Out, "allowed: workspace %s (read)\n", root)
-			return 0
+		if len(root) > len(selectedRoot) {
+			selected = &sb.Workspaces[i]
+			selectedRoot = root
 		}
-		if !workspace.ReadOnly {
-			_, _ = fmt.Fprintf(r.Out, "allowed: workspace %s (read-write)\n", root)
-			return 0
-		}
-		_, _ = fmt.Fprintf(r.Out, "denied: workspace %s is read-only\n", root)
+	}
+	if selected == nil {
+		_, _ = fmt.Fprintln(r.Out, "denied: path is outside every writable workspace")
 		return 1
 	}
-	_, _ = fmt.Fprintln(r.Out, "denied: path is outside every writable workspace")
+	if !*write {
+		_, _ = fmt.Fprintf(r.Out, "allowed: workspace %s (read)\n", selectedRoot)
+		return 0
+	}
+	if !selected.ReadOnly {
+		_, _ = fmt.Fprintf(r.Out, "allowed: workspace %s (read-write)\n", selectedRoot)
+		return 0
+	}
+	_, _ = fmt.Fprintf(r.Out, "denied: workspace %s is read-only\n", selectedRoot)
 	return 1
 }
 
