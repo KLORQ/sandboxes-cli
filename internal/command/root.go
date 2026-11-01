@@ -34,7 +34,8 @@ shell agent is implemented. Omit PATH for no workspace mount.
 Flags:
   --name NAME                 sandbox name
   --workspace PATH[:ro]       additional workspace (repeatable)
-  --publish HOST:GUEST[/tcp|udp]  publish a TCP/UDP guest port (repeatable)
+  -p, --publish [[HOST_IP:]HOST_PORT:]GUEST[/tcp|udp|tcp4|udp4|tcp6|udp6]
+                              publish a TCP/UDP guest port (repeatable)
   --allow-network CIDR[:PORT] allow egress (repeatable)
   --deny-network CIDR[:PORT]  deny egress (repeatable)
   --image REF                 image override
@@ -634,7 +635,8 @@ func parseCreateOptions(args []string) (createOptions, bool, error) {
 	var workspaceFlags stringListFlag
 	fs.Var(&workspaceFlags, "workspace", "host workspace path, optionally suffixed with :ro (repeatable)")
 	var publishFlags stringListFlag
-	fs.Var(&publishFlags, "publish", "publish HOST:GUEST[/tcp|udp] (repeatable)")
+	fs.Var(&publishFlags, "publish", "publish [[HOST_IP:]HOST_PORT:]GUEST[/tcp|udp|tcp4|udp4|tcp6|udp6] (repeatable)")
+	fs.Var(&publishFlags, "p", "publish [[HOST_IP:]HOST_PORT:]GUEST[/tcp|udp|tcp4|udp4|tcp6|udp6] (repeatable; alias for --publish)")
 	var allowFlags, denyFlags stringListFlag
 	fs.Var(&allowFlags, "allow-network", "allow egress CIDR[:PORT] (repeatable; optional udp: prefix)")
 	fs.Var(&denyFlags, "deny-network", "deny egress CIDR[:PORT] (repeatable; optional udp: prefix)")

@@ -57,10 +57,12 @@ session (rejected with `--detach`). Only the `shell` agent is implemented;
 preview using their official image names; `claude`, `cline` and the remaining
 agents are explicitly unsupported until an image/auth contract exists. The
 embedded registry is `internal/agent/registry.yaml`. Multiple workspaces are supported; a
-`:ro` suffix mounts a directory read-only. `--publish HOST:GUEST[/tcp|udp]` may be
-repeated when creating; `ksbx ports SANDBOX` lists the stored bindings;
-`ports --publish HOST:GUEST` / `--unpublish [HOST:]GUEST` change them live;
-`--publish GUEST` allocates an ephemeral loopback host port.
+`:ro` suffix mounts a directory read-only. `--publish [[HOST_IP:]HOST_PORT:]GUEST[/tcp|udp|tcp4|udp4|tcp6|udp6]`
+may be repeated when creating, with loopback `HOST_IP` limited to `127.0.0.1` and
+`::1` (IPv6 uses brackets, e.g. `[::1]:8080:80/tcp6`); `ksbx ports SANDBOX`
+lists the stored bindings; `ports --publish ...` / `--unpublish ...` change them
+live; omitting `HOST_PORT` allocates an ephemeral host port on the selected
+loopback IP.
 `--allow-network CIDR[:PORT]` and `--deny-network CIDR[:PORT]` (optional `udp:`
 prefix) add create-time IPv4 egress rules; the default remains deny.
 `--policy-profile deny-all|balanced|sbx-compat` selects an opt-in egress preset
