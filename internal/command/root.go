@@ -198,9 +198,11 @@ func (r *Runner) runAuxiliaryCommand(ctx context.Context, name string, args []st
 		return r.kit(args), true
 	case "daemon":
 		return r.daemon(args), true
+	case "template":
+		return r.template(args), true
 	case commandReset:
 		return r.reset(ctx, args), true
-	case "volume", "template", "env", "mcp", "tui", "move", "ttl", "setup", "skills":
+	case "volume", "env", "mcp", "tui", "move", "ttl", "setup", "skills":
 		return r.unsupportedFamily(name), true
 	case completionCommand:
 		return r.completion(args), true
@@ -471,15 +473,14 @@ func reorderFlagArgs(args []string, valueFlags map[string]bool) []string {
 
 func (r *Runner) unsupportedFamily(name string) int {
 	reasons := map[string]string{
-		"volume":   "persistent volumes are cloud-only in this build",
-		"template": "template management is not implemented; use --image or a kit",
-		"env":      "declarative sbxenv files are not implemented",
-		"mcp":      "the MCP gateway is not implemented",
-		"tui":      "the terminal dashboard is not implemented",
-		"move":     "cloud move is unavailable without a tenant",
-		"ttl":      "cloud TTL is unavailable without a tenant",
-		"setup":    "host setup is not implemented",
-		"skills":   "skills management is not implemented",
+		"volume": "persistent volumes are cloud-only in this build",
+		"env":    "declarative sbxenv files are not implemented",
+		"mcp":    "the MCP gateway is not implemented",
+		"tui":    "the terminal dashboard is not implemented",
+		"move":   "cloud move is unavailable without a tenant",
+		"ttl":    "cloud TTL is unavailable without a tenant",
+		"setup":  "host setup is not implemented",
+		"skills": "skills management is not implemented",
 	}
 	_, _ = fmt.Fprintf(r.Err, "ksbx %s: unsupported: %s\n", name, reasons[name])
 	return 1
