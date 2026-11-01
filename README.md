@@ -118,9 +118,10 @@ session. `ksbx settings ls|get|set|unset` manages
 daemon-owned consumers need a daemon restart. `ksbx secret` stores service API
 keys and registry credentials in the host keychain. Service secret values are
 not written to SQLite, logs or argv. `-e KEY=${secret:service}` is resolved by
-the daemon at exec time; sandbox scope wins over global. This is opt-in
-environment injection (the guest process can read its own env), not the host
-proxy used by Docker sbx.
+the daemon at exec time; sandbox scope wins over global. Prefer
+`-e OPENAI_BASE_URL='${proxy:openai}'`: the daemon starts a loopback host proxy
+and the guest sees only its URL, never the key. Direct secret env is still
+available for agents without a base-URL override and is explicitly weaker.
 
 `ksbx cp` copies regular files and directory trees in either direction; exactly
 one side is `SANDBOX:PATH` with an absolute guest path. A guest destination
