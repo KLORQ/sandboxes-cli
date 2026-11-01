@@ -269,3 +269,19 @@ func TestFilterStoppedHonorsUntilAndUnknownStopTime(t *testing.T) {
 		t.Fatalf("unfiltered=%v", all)
 	}
 }
+
+func TestResetRemovesAllSandboxesWithForce(t *testing.T) {
+	sandbox := &lifecycleSandbox{items: []sdk.Sandbox{
+		{ID: "sb-1", Name: "one"}, {ID: "sb-2", Name: "two"},
+	}}
+	runner, out := lifecycleRunner(sandbox)
+	if code := runner.Run(context.Background(), []string{"reset", "--force"}); code != 0 {
+		t.Fatalf("exit=%d output=%q", code, out.String())
+	}
+	if len(sandbox.deletes) != 2 {
+		t.Fatalf("deletes=%v", sandbox.deletes)
+	}
+	if !strings.Contains(out.String(), "Reset 2 sandbox") {
+		t.Fatalf("output=%q", out.String())
+	}
+}
