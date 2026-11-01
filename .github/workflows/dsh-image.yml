@@ -1,6 +1,11 @@
 name: dsh-image
 on:
   workflow_dispatch:
+  push:
+    branches: [feature/D2-policy-v2]
+    paths:
+      - agents/dsh/**
+      - .github/workflows/dsh-image.yml
 permissions:
   contents: read
   packages: write
