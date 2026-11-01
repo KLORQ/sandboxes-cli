@@ -197,7 +197,9 @@ func (r *Runner) runAuxiliaryCommand(ctx context.Context, name string, args []st
 		return r.kit(args), true
 	case "daemon":
 		return r.daemon(args), true
-	case "volume", "template", "env", "mcp", "tui", "move", "ttl", commandReset, "setup", "skills":
+	case commandReset:
+		return r.reset(ctx, args), true
+	case "volume", "template", "env", "mcp", "tui", "move", "ttl", "setup", "skills":
 		return r.unsupportedFamily(name), true
 	case completionCommand:
 		return r.completion(args), true
@@ -475,7 +477,6 @@ func (r *Runner) unsupportedFamily(name string) int {
 		"tui":      "the terminal dashboard is not implemented",
 		"move":     "cloud move is unavailable without a tenant",
 		"ttl":      "cloud TTL is unavailable without a tenant",
-		"reset":    "destructive reset is not implemented; use ksbx rm/prune",
 		"setup":    "host setup is not implemented",
 		"skills":   "skills management is not implemented",
 	}
