@@ -66,13 +66,13 @@ func TestAgentRegistryPreviewAndUnsupported(t *testing.T) {
 	if err := validateRunAgent("codex"); err != nil {
 		t.Fatalf("preview codex rejected: %v", err)
 	}
-	if err := validateRunAgent("claude"); err == nil {
+	if err := validateRunAgent("cline"); err == nil {
 		t.Fatal("unsupported claude accepted")
 	}
 	if err := validateRunAgent("missing"); err == nil {
 		t.Fatal("unknown agent accepted")
 	}
-	if !isAgentName("kimi") || !isAgentName("claude") || isAgentName("missing") {
+	if !isAgentName("kimi") || !isAgentName("cline") || isAgentName("missing") {
 		t.Fatal("isAgentName registry mismatch")
 	}
 }
